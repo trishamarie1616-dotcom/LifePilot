@@ -1,0 +1,65 @@
+/* LifePilot prototype styles: mobile-first, calm, and easy to customize. */
+:root {
+  --ink: #172033;
+  --muted: #68738a;
+  --line: #e6eaf2;
+  --surface: #ffffff;
+  --soft: #f6f8fc;
+  --brand: #5b5ce2;
+  --brand-dark: #4546bd;
+  --accent: #f1efff;
+  --shadow: 0 18px 50px rgba(39, 44, 91, .10);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; color: var(--ink); background: linear-gradient(135deg, #fafbff 0%, #f2f4ff 100%); }
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+.app-container { min-height: 100vh; display: flex; flex-direction: column; }
+.app-header { padding: 28px 20px 12px; }
+.header-content, .app-main, .app-footer { width: min(100% - 32px, 920px); margin: 0 auto; }
+.logo { display: flex; align-items: center; gap: 10px; }
+.logo-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--brand); color: white; box-shadow: 0 8px 20px rgba(91,92,226,.3); }
+h1 { margin: 0; font-size: 1.55rem; letter-spacing: -.04em; }
+.tagline { margin: 8px 0 0 50px; color: var(--muted); font-size: .95rem; }
+.app-main { flex: 1; padding: 26px 0 48px; }
+.input-section { background: var(--surface); border: 1px solid rgba(230,234,242,.8); border-radius: 24px; padding: 18px; box-shadow: var(--shadow); }
+.input-field { width: 100%; min-height: 105px; resize: vertical; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 1.08rem; line-height: 1.55; }
+.input-field::placeholder { color: #a5adc0; }
+.submit-btn, .save-plan-btn { border: 0; border-radius: 13px; color: white; background: var(--brand); padding: 13px 17px; font-weight: 700; transition: .2s ease; }
+.submit-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+.submit-btn:hover, .save-plan-btn:hover { background: var(--brand-dark); transform: translateY(-1px); }
+.btn-icon { font-size: 1.25rem; }
+.examples-section { margin-top: 18px; }
+.examples-label { margin: 0 0 9px; color: var(--muted); font-size: .84rem; font-weight: 700; }
+.examples-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+.example-btn { border: 1px solid var(--line); border-radius: 999px; background: var(--soft); color: #4d5870; padding: 9px 12px; font-size: .83rem; }
+.example-btn:hover { border-color: var(--brand); color: var(--brand-dark); }
+.plans-section { margin-top: 36px; }
+.plans-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+h2 { margin: 0; font-size: 1.2rem; letter-spacing: -.02em; }
+.plans-count { display: grid; place-items: center; min-width: 25px; height: 25px; border-radius: 50%; background: var(--accent); color: var(--brand-dark); font-size: .8rem; font-weight: 800; }
+.plan-card, .saved-plan { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 20px; box-shadow: 0 10px 35px rgba(39,44,91,.06); }
+.plan-close { display: flex; justify-content: flex-end; }
+.close-btn { border: 0; background: transparent; color: var(--muted); font-size: 1.1rem; }
+.plan-section { border-top: 1px solid var(--line); padding: 18px 0 4px; }
+.section-title { margin: 0 0 8px; font-size: .88rem; color: var(--brand-dark); text-transform: uppercase; letter-spacing: .06em; }
+.plan-goal { margin: 0; line-height: 1.55; }
+ul, ol { margin: 0; padding-left: 22px; }
+li { padding: 5px 0; line-height: 1.45; }
+.save-plan-btn { margin-top: 18px; width: 100%; }
+.plans-list { display: grid; gap: 12px; }
+.saved-plan { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.saved-plan h3 { margin: 0 0 5px; font-size: 1rem; }
+.saved-plan p { margin: 0; color: var(--muted); font-size: .87rem; }
+.saved-plan button { border: 0; background: var(--accent); color: var(--brand-dark); border-radius: 10px; padding: 9px 11px; font-weight: 700; }
+.empty-state { color: var(--muted); text-align: center; padding: 30px 15px; border: 1px dashed #ccd2e1; border-radius: 18px; }
+.empty-state p { margin: 0; }
+.app-footer { padding: 18px 0 28px; color: var(--muted); font-size: .78rem; text-align: center; }
+.app-footer a { color: var(--brand-dark); }
+.loading-overlay { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(250,251,255,.78); backdrop-filter: blur(4px); z-index: 2; }
+.loading-spinner { text-align: center; color: var(--muted); }
+.spinner { width: 34px; height: 34px; margin: auto; border: 4px solid #dfe2ff; border-top-color: var(--brand); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (min-width: 650px) { .app-header { padding-top: 42px; } .input-section { padding: 28px; } .submit-btn { width: auto; margin-left: auto; gap: 28px; } .input-container { display: flex; align-items: flex-end; gap: 18px; } .input-field { min-height: 90px; } .plan-card { padding: 28px; } }

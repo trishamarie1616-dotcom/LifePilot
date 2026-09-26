@@ -1,0 +1,7 @@
+{
+  "name": "lifepilot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-powered personal action assistant prototype",
+  "scripts": { "start": "python3 -m http.server 8000" }
+}
