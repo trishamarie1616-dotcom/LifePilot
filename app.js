@@ -1,11 +1,11 @@
-// LifePilot Prototype - stable static version
-// This file intentionally stays self-contained so it can run on GitHub Pages
-// without a backend, API keys, or external services.
+// LifePilot prototype: static, self-contained planning app for GitHub Pages.
+// This file is designed to remain compatible with normal static hosting and
+// later replacement by a real AI/agent layer without redesigning the UI.
 //
-// Future AI/MCP integration point:
-// - Replace MockAIGenerator.generate() with a call to an MCP server, AWS Bedrock,
-//   or a hosted AI model while keeping the UI/render logic unchanged.
-// - The AppState and LocalStorage structure can be adapted to a cloud backend later.
+// Future integration points:
+// - Replace MockAIGenerator.generate() with an MCP or AI model call.
+// - Replace RequestAnalyzer.extract() with an external agent or orchestration step.
+// - Keep AppState + LocalStorage structure stable for AWS Bedrock/AgentCore or Alexa+.
 
 const AppState = {
   plans: JSON.parse(localStorage.getItem('lifepilot-plans') || '[]'),
@@ -15,156 +15,247 @@ const AppState = {
 const $ = (id) => document.getElementById(id);
 const input = $('userInput');
 
+const RequestAnalyzer = {
+  extract(request) {
+    const cleanRequest = String(request || '').trim();
+    const lowerRequest = cleanRequest.toLowerCase();
+
+    const details = {
+      originalRequest: cleanRequest,
+      intent: 'general',
+      context: [],
+      entities: {},
+      missingInformation: []
+    };
+
+    const yearMatch = cleanRequest.match(/\b(19|20)\d{2}\b/);
+    if (yearMatch) details.entities.year = yearMatch[0];
+
+    const makeMatch = cleanRequest.match(/\b(ford|chevy|chevrolet|toyota|honda|nissan|bmw|audi|volkswagen|hyundai|kia|jeep|dodge|ram|gmc|buick|cadillac|tesla|lexus|mazda|subaru|volvo|mercedes|porsche)\b/gi);
+    if (makeMatch) details.entities.make = makeMatch[0];
+
+    const modelMatch = cleanRequest.match(/\b(sentra|civic|accord|camry|corolla|f-150|silverado|focus|escape|mustang|cr-v|rav4|altima)\b/gi);
+    if (modelMatch) details.entities.model = modelMatch[0];
+
+    const codeMatch = cleanRequest.match(/p\d{4}/gi);
+    if (codeMatch) {
+      details.entities.diagnosticCode = codeMatch[0].toUpperCase();
+    }
+
+    if (/(limp mode|warning light|transmission|engine|diagnostic code|vehicle|car|repair|mechanic|check engine)/i.test(cleanRequest)) {
+      details.intent = 'vehicle_repair';
+      details.context.push('Vehicle repair/diagnostic scenario');
+    }
+
+    if (/(job|career|resume|interview|hiring|linkedin|application|job search|cover letter|recruiter)/i.test(cleanRequest)) {
+      details.intent = 'job_search';
+      details.context.push('Job-search or career-transition scenario');
+    }
+
+    if (/(doctor|medical|appointment|health|clinic|dentist|physician|symptom|checkup|prescription)/i.test(cleanRequest)) {
+      details.intent = 'doctor_appointment';
+      details.context.push('Medical preparation or scheduling scenario');
+    }
+
+    if (/(vacation|trip|travel|flight|hotel|destination|getaway|holiday|itinerary)/i.test(cleanRequest)) {
+      details.intent = 'travel_planning';
+      details.context.push('Travel or vacation planning scenario');
+    }
+
+    if (/overwhelmed|dont know where to start|not sure where to start|stuck|confused/i.test(cleanRequest)) {
+      details.context.push('User is overwhelmed or unsure where to start');
+    }
+
+    if (details.intent === 'vehicle_repair') {
+      details.missingInformation = [
+        'Current mileage and maintenance history',
+        'Exact symptoms and when they started',
+        'Whether there are any additional codes or warning lights',
+        'Whether the issue happens while idling, accelerating, or under load'
+      ];
+    }
+
+    if (details.intent === 'job_search') {
+      details.missingInformation = [
+        'Target role or roles',
+        'Location preference',
+        'Desired salary range',
+        'Timeline you need to start working',
+        'Your experience and strongest skills'
+      ];
+    }
+
+    if (details.intent === 'doctor_appointment') {
+      details.missingInformation = [
+        'Type of appointment needed',
+        'Symptoms and how long they have been happening',
+        'Insurance information',
+        'Preferred doctor or clinic'
+      ];
+    }
+
+    if (details.intent === 'travel_planning') {
+      details.missingInformation = [
+        'Travel dates',
+        'Budget',
+        'Destination preferences',
+        'Number of travelers',
+        'Trip length'
+      ];
+    }
+
+    if (details.intent === 'general' && !details.context.length) {
+      details.missingInformation = [
+        'What success looks like',
+        'Your timeline',
+        'Any realistic constraints or budget',
+        'What support or resources you already have'
+      ];
+    }
+
+    if (!details.entities.year && /\b(2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025)\b/.test(cleanRequest)) {
+      details.entities.year = cleanRequest.match(/\b(2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025)\b/)[0];
+    }
+
+    return details;
+  }
+};
+
 const MockAIGenerator = {
   generate(request) {
-    const text = request.toLowerCase();
+    const analysis = RequestAnalyzer.extract(request);
 
-    if (/(2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025).*(nissan|sentra)|nissan.*sentra|sentra.*nissan|limp mode|p0965|diagnostic code|vehicle|car|repair/i.test(request)) {
+    if (analysis.intent === 'vehicle_repair') {
+      const vehicleLabel = [analysis.entities.year, analysis.entities.make, analysis.entities.model].filter(Boolean).join(' ');
+      const vehicleText = vehicleLabel || 'your vehicle';
+      const codeText = analysis.entities.diagnosticCode ? ` and diagnostic code ${analysis.entities.diagnosticCode}` : '';
+
       return {
-        goal: 'Diagnose and repair the vehicle issue while keeping the cost and timeline under control.',
-        context: 'The request includes a 2014 Nissan Sentra, limp mode, and diagnostic code P0965, which suggests a drivetrain or transmission related issue that needs focused diagnosis.',
+        goal: `Diagnose and address the issue affecting ${vehicleText} without guessing at the root cause.${codeText}`,
+        context: [
+          `Request includes: ${vehicleText}`,
+          analysis.entities.diagnosticCode ? `Diagnostic code identified: ${analysis.entities.diagnosticCode}` : 'No diagnostic code was explicitly provided',
+          /limp mode/i.test(request) ? 'Vehicle is entering limp mode, which indicates a drivetrain or transmission-related concern.' : 'The request indicates a vehicle issue that needs targeted diagnosis.'
+        ].join(' '),
         tasks: [
-          'Gather the exact timing and trigger for the limp mode event.',
-          'Check whether the code P0965 is active and note any other warning lights.',
-          'Review recent maintenance or fluid changes that may affect transmission behavior.',
-          'Get a diagnostic scan and written estimate from a trusted mechanic.',
-          'Compare repair options and choose the most reliable fix.'
+          'Document exactly when the limp mode appears and under what conditions.',
+          'Check whether there are any other warning lights or fault codes beyond the current one.',
+          'Review recent service history and any recent repairs or maintenance.',
+          'Schedule a diagnostic inspection with a trusted mechanic or repair shop.',
+          'Ask for a written estimate and explanation of the likely root cause before approving work.'
         ],
         nextSteps: [
-          'Schedule a diagnostic inspection with a mechanic today.',
-          'Document the exact symptoms and any warning lights before the appointment.',
-          'Ask the shop to confirm whether the issue is transmission or control-related.'
+          'Call a repair shop today to schedule a diagnostic appointment.',
+          'Bring a list of symptoms, timing, and the code to the appointment.',
+          'Avoid driving aggressively until the issue is diagnosed.'
         ],
         followups: [
-          'Review the diagnostic estimate before approving any repair work.',
-          'Ask for a written explanation of the root cause and required fix.',
+          'Check the mechanic\'s diagnosis and estimate before approving repairs.',
+          'Confirm any transmission or control-module issues are clearly explained in writing.',
           'Verify the vehicle stays out of limp mode after the repair.'
         ],
-        informationNeeded: [
-          'Current mileage and maintenance history',
-          'Any other warning lights or codes present',
-          'Whether the issue happens under acceleration, deceleration, or while idling'
-        ]
+        informationNeeded: analysis.missingInformation
       };
     }
 
-    if (/(job|career|resume|interview|hiring|linkedin|cover letter|position|application|job search)/i.test(request)) {
+    if (analysis.intent === 'job_search') {
       return {
-        goal: 'Create a focused, workable plan to find the right job without getting overwhelmed.',
-        context: 'The user is in a job-search situation and is feeling overwhelmed, so the plan should reduce complexity and make action easier to start.',
+        goal: 'Build a focused plan to find work and reduce the overwhelm while keeping momentum.',
+        context: [
+          'The request shows a job-search intent.',
+          /overwhelmed|dont know where to start|not sure where to start|stuck/i.test(request) ? 'The user is feeling overwhelmed, so the plan should simplify the process and create immediate steps.' : 'The user needs a structured approach to job search.'
+        ].join(' '),
         tasks: [
           'Choose 2-3 target roles that match your background and interests.',
-          'Update your resume for those roles and remove outdated or irrelevant details.',
-          'Refresh your LinkedIn profile with a clear headline and summary.',
-          'List 10 companies or roles you actually want to pursue.',
-          'Create a simple tracker for applications and follow-ups.'
+          'Update your resume for those specific roles and remove outdated details.',
+          'Refresh your LinkedIn profile and a brief professional summary.',
+          'Create a simple application tracker with dates and follow-up reminders.',
+          'Identify a short list of employers you want to target.'
         ],
         nextSteps: [
-          'Pick your top three target roles this week.',
-          'Update your resume today and save it in a versioned folder.',
-          'Apply to 3-5 jobs that match those targets.'
+          'Pick your top three target roles today.',
+          'Update your resume and LinkedIn profile this week.',
+          'Apply to a small batch of jobs that line up with your targets.'
         ],
         followups: [
-          'Track application dates and follow-up dates in one place.',
-          'Follow up after one week if you have not heard back.',
-          'Review interview feedback and adjust your strategy.'
+          'Track applications and follow-up dates in one place.',
+          'Review interview feedback and adjust your approach weekly.',
+          'Check in on your momentum and avoid applying randomly.'
         ],
-        informationNeeded: [
-          'Target role or roles',
-          'Location preferences',
-          'Desired salary range',
-          'Availability and work schedule',
-          'Years of experience and key skills'
-        ]
+        informationNeeded: analysis.missingInformation
       };
     }
 
-    if (/(doctor|medical|appointment|symptom|checkup|health|clinic|dentist|physician)/i.test(request)) {
+    if (analysis.intent === 'doctor_appointment') {
       return {
-        goal: 'Prepare for the appointment so you can get the right care and ask the most important questions.',
-        context: 'The user wants to schedule or prepare for a medical appointment and is unsure what is needed beforehand.',
+        goal: 'Prepare for a medical appointment and make the visit useful and efficient.',
+        context: 'The user wants to schedule or prepare for a doctor visit but is unsure what to gather beforehand.',
         tasks: [
-          'Write down symptoms, duration, and severity.',
-          'List medications, allergies, and important health history.',
-          'Check insurance and provider network before booking.',
-          'Prepare questions for the doctor before the visit.',
-          'Schedule date and time and consider any transportation needs.'
+          'Write down the symptoms, their severity, and how long they have been happening.',
+          'List any medications, allergies, and medical history you want to share.',
+          'Check insurance details and confirm the clinic or doctor accepts your plan.',
+          'Prepare 2-3 questions for the appointment in advance.',
+          'Book the appointment and note any required preparation such as fasting.'
         ],
         nextSteps: [
-          'Call the clinic or use the portal to book the appointment.',
-          'Gather insurance details and your main questions.',
-          'Create a short symptom summary for the doctor.'
+          'Call or book the appointment today.',
+          'Gather your insurance card and symptom notes.',
+          'Write down the questions you want answered.'
         ],
         followups: [
-          'Confirm the appointment 24 hours before.',
-          'Bring medication list and questions to the visit.',
-          'Write down follow-up instructions after the appointment.'
+          'Confirm the appointment 24 hours before it happens.',
+          'After the visit, write down any new instructions or prescriptions.',
+          'Schedule any recommended follow-up appointment before leaving.'
         ],
-        informationNeeded: [
-          'Type of appointment needed',
-          'Symptoms and their timeline',
-          'Insurance details',
-          'Preferred doctor or clinic'
-        ]
+        informationNeeded: analysis.missingInformation
       };
     }
 
-    if (/(vacation|travel|trip|flight|hotel|destination|itinerary|getaway|holiday)/i.test(request)) {
+    if (analysis.intent === 'travel_planning') {
       return {
-        goal: 'Plan a trip that fits your budget, preferences, and timing without overthinking the details.',
-        context: 'The user wants a vacation but has not decided on a destination or trip details yet.',
+        goal: 'Choose a vacation direction and build a usable plan around budget, timing, and preferences.',
+        context: 'The user wants to take a trip but has not decided where to go or what trip details matter most yet.',
         tasks: [
-          'Choose a rough travel window and total budget.',
-          'List your vacation preferences: beach, city, nature, budget, etc.',
-          'Compare 2-3 destination options.',
-          'Check flight and hotel prices for the chosen dates.',
-          'Create a simple itinerary or shortlist of activities.'
+          'Set your travel dates and overall budget.',
+          'List the type of trip you want: beach, city, nature, family, adventure, etc.',
+          'Compare 2-3 destination options that fit the budget and time available.',
+          'Check flight and hotel pricing for the target dates.',
+          'Create a simple shortlist of must-do activities.'
         ],
         nextSteps: [
-          'Set a realistic travel budget and preferred dates.',
-          'Research 2-3 destination options.',
-          'Pick one destination and start booking the essentials.'
+          'Pick a realistic travel window and price range.',
+          'Research two or three destinations that fit your preferences.',
+          'Choose one destination and book essentials.'
         ],
         followups: [
-          'Book flights and lodging before the trip.',
-          'Check weather and travel requirements closer to departure.',
-          'Prepare a packing list and itinerary.'
+          'Book flights and lodging before finalizing the itinerary.',
+          'Check travel requirements, weather, and packing list closer to departure.',
+          'Confirm transportation and key reservations before the trip.'
         ],
-        informationNeeded: [
-          'Travel dates',
-          'Budget',
-          'Destination preferences',
-          'Number of travelers',
-          'Trip length'
-        ]
+        informationNeeded: analysis.missingInformation
       };
     }
 
     return {
-      goal: 'Break the request into a manageable plan and identify the next concrete actions.',
-      context: 'The request is not specific enough to fully determine the exact environment, but it still contains a clear goal that can be broken into next actions.',
+      goal: 'Break the request into manageable actions and identify the next concrete step.',
+      context: 'The request is not specific enough to determine a perfect plan, but it still contains a clear intention that can be broken down into actionable steps.',
       tasks: [
-        'Clarify what success looks like for this goal.',
-        'List any tools, resources, or information you need.',
-        'Break the goal into smaller milestones.',
-        'Choose the first action you can complete this week.'
+        'Clarify exactly what success looks like for this goal.',
+        'List the resources, constraints, and information you already have.',
+        'Break the result into smaller milestones or time blocks.',
+        'Choose the smallest clear action you can complete now.'
       ],
       nextSteps: [
-        'Define the goal in one sentence.',
-        'Decide on the first step you can complete within 30 minutes.',
-        'Schedule a time to take that action.'
+        'State the goal in one sentence.',
+        'Pick one immediate action you can finish this week.',
+        'Schedule a short time block to complete it.'
       ],
       followups: [
-        'Review progress after the first milestone.',
-        'Adjust the plan if requirements change.',
-        'Check in again after a few days.'
+        'Review progress after the first step.',
+        'Adjust the plan if conditions or constraints change.',
+        'Check in on the goal again after a few days.'
       ],
-      informationNeeded: [
-        'Desired end result',
-        'Timeline',
-        'Budget or constraints',
-        'Resources or support needed'
-      ]
+      informationNeeded: analysis.missingInformation
     };
   }
 };
@@ -172,45 +263,51 @@ const MockAIGenerator = {
 function renderPlan(plan) {
   if (!plan) return;
 
-  if ($('planGoal')) {
-    $('planGoal').textContent = plan.goal || '';
+  const goalEl = $('planGoal');
+  if (goalEl) {
+    const details = [plan.goal, plan.context].filter(Boolean).join(' ');
+    goalEl.textContent = details;
   }
 
-  if ($('planTasks')) {
-    $('planTasks').innerHTML = (plan.tasks || [])
+  const tasksEl = $('planTasks');
+  if (tasksEl) {
+    tasksEl.innerHTML = (plan.tasks || [])
       .map((task) => `<li>${escapeHTML(task)}</li>`)
       .join('');
   }
 
-  if ($('planNextSteps')) {
-    $('planNextSteps').innerHTML = (plan.nextSteps || [])
+  const nextStepsEl = $('planNextSteps');
+  if (nextStepsEl) {
+    nextStepsEl.innerHTML = (plan.nextSteps || [])
       .map((step) => `<li>${escapeHTML(step)}</li>`)
       .join('');
   }
 
-  if ($('planFollowups')) {
-    $('planFollowups').innerHTML = (plan.followups || [])
+  const followUpsEl = $('planFollowups');
+  if (followUpsEl) {
+    followUpsEl.innerHTML = (plan.followups || [])
       .map((item) => `<li>${escapeHTML(item)}</li>`)
       .join('');
   }
 
-  if ($('currentPlanContainer')) {
-    $('currentPlanContainer').style.display = 'block';
-    $('currentPlanContainer').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const container = $('currentPlanContainer');
+  if (container) {
+    container.style.display = 'block';
+    container.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 }
 
 function renderSavedPlans() {
   const countEl = $('plansCount');
   const emptyState = $('emptyState');
-  const listEl = $('plansList');
+  const plansList = $('plansList');
 
-  if (!countEl || !emptyState || !listEl) return;
+  if (!countEl || !emptyState || !plansList) return;
 
-  countEl.textContent = AppState.plans.length;
+  countEl.textContent = String(AppState.plans.length);
   emptyState.style.display = AppState.plans.length ? 'none' : 'block';
 
-  listEl.innerHTML = AppState.plans
+  plansList.innerHTML = AppState.plans
     .map((plan, index) => `
       <article class="saved-plan">
         <div>
@@ -240,8 +337,9 @@ function generatePlanFromRequest() {
     return;
   }
 
-  if ($('loadingOverlay')) {
-    $('loadingOverlay').style.display = 'grid';
+  const overlay = $('loadingOverlay');
+  if (overlay) {
+    overlay.style.display = 'grid';
   }
 
   setTimeout(() => {
@@ -255,21 +353,19 @@ function generatePlanFromRequest() {
 
       renderPlan(AppState.currentPlan);
 
-      if ($('savePlanBtn')) {
-        $('savePlanBtn').textContent = '💾 Save This Plan';
-      }
-
-      if ($('loadingOverlay')) {
-        $('loadingOverlay').style.display = 'none';
+      const saveBtn = $('savePlanBtn');
+      if (saveBtn) {
+        saveBtn.textContent = '💾 Save This Plan';
       }
     } catch (error) {
       console.error('Error generating plan:', error);
-      if ($('loadingOverlay')) {
-        $('loadingOverlay').style.display = 'none';
-      }
       alert('I\'m sorry, but there was an error. Please try again.');
+    } finally {
+      if (overlay) {
+        overlay.style.display = 'none';
+      }
     }
-  }, 400);
+  }, 350);
 }
 
 function saveCurrentPlan() {
@@ -284,8 +380,9 @@ function saveCurrentPlan() {
     localStorage.setItem('lifepilot-plans', JSON.stringify(AppState.plans));
     renderSavedPlans();
 
-    if ($('savePlanBtn')) {
-      $('savePlanBtn').textContent = '✓ Plan Saved';
+    const saveBtn = $('savePlanBtn');
+    if (saveBtn) {
+      saveBtn.textContent = '✓ Plan Saved';
     }
   } catch (error) {
     console.error('Error saving plan:', error);
@@ -310,7 +407,7 @@ function attachEventHandlers() {
   document.querySelectorAll('.example-btn').forEach((button) => {
     button.addEventListener('click', () => {
       if (input) {
-        input.value = button.dataset.example;
+        input.value = button.dataset.example || '';
         input.focus();
       }
     });
@@ -341,8 +438,10 @@ function attachEventHandlers() {
       if (AppState.plans[index]) {
         AppState.currentPlan = AppState.plans[index];
         renderPlan(AppState.currentPlan);
-        if ($('savePlanBtn')) {
-          $('savePlanBtn').textContent = '✓ Plan Saved';
+
+        const saveBtnAfterView = $('savePlanBtn');
+        if (saveBtnAfterView) {
+          saveBtnAfterView.textContent = '✓ Plan Saved';
         }
       }
     });
