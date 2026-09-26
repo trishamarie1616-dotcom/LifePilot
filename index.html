@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="LifePilot - AI-powered personal action assistant that turns requests into actionable plans">
+    <title>LifePilot - Personal Action Assistant</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header with branding -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo">
+                    <span class="logo-icon">✈️</span>
+                    <h1>LifePilot</h1>
+                </div>
+                <p class="tagline">Turn your goals into action</p>
+            </div>
+        </header>
+
+        <!-- Main content area -->
+        <main class="app-main">
+            <!-- Input section for user requests -->
+            <section class="input-section">
+                <div class="input-container">
+                    <textarea 
+                        id="userInput" 
+                        class="input-field" 
+                        placeholder="What do you need help accomplishing?"
+                        rows="3"
+                    ></textarea>
+                    <button id="submitBtn" class="submit-btn">
+                        <span>Generate Plan</span>
+                        <span class="btn-icon">→</span>
+                    </button>
+                </div>
+
+                <!-- Example prompts -->
+                <div class="examples-section">
+                    <p class="examples-label">Try asking:</p>
+                    <div class="examples-grid">
+                        <button class="example-btn" data-example="I need to get my car fixed.">
+                            🚗 Car Maintenance
+                        </button>
+                        <button class="example-btn" data-example="Help me organize my job search.">
+                            💼 Job Search
+                        </button>
+                        <button class="example-btn" data-example="I need to plan a doctor's appointment.">
+                            🏥 Doctor Visit
+                        </button>
+                        <button class="example-btn" data-example="Help me plan a vacation.">
+                            ✈️ Vacation Planning
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Plans/Projects display section -->
+            <section class="plans-section">
+                <div class="plans-header">
+                    <h2>Your Active Plans</h2>
+                    <span id="plansCount" class="plans-count">0</span>
+                </div>
+
+                <!-- Current plan display (when a plan is being viewed/created) -->
+                <div id="currentPlanContainer" class="plan-container" style="display: none;">
+                    <div class="plan-card current-plan">
+                        <div class="plan-close">
+                            <button id="closePlanBtn" class="close-btn" title="Close plan">✕</button>
+                        </div>
+
+                        <!-- Goal section -->
+                        <div class="plan-section">
+                            <h3 class="section-title">🎯 Your Goal</h3>
+                            <p id="planGoal" class="plan-goal"></p>
+                        </div>
+
+                        <!-- Tasks section -->
+                        <div class="plan-section">
+                            <h3 class="section-title">📋 Action Items</h3>
+                            <ul id="planTasks" class="tasks-list"></ul>
+                        </div>
+
+                        <!-- Next steps section -->
+                        <div class="plan-section">
+                            <h3 class="section-title">🚀 Next Steps</h3>
+                            <ol id="planNextSteps" class="steps-list"></ol>
+                        </div>
+
+                        <!-- Follow-ups section -->
+                        <div class="plan-section">
+                            <h3 class="section-title">🔔 Follow-ups</h3>
+                            <ul id="planFollowups" class="followups-list"></ul>
+                        </div>
+
+                        <!-- Save plan button -->
+                        <button id="savePlanBtn" class="save-plan-btn">
+                            💾 Save This Plan
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Saved plans list -->
+                <div id="plansListContainer" class="plans-list-container">
+                    <div id="plansList" class="plans-list"></div>
+                    <div id="emptyState" class="empty-state">
+                        <p>No plans yet. Ask LifePilot to help you accomplish something!</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p>LifePilot • Turning goals into action • <a href="https://github.com/trishamarie1616-dotcom/LifePilot" target="_blank">Open Source</a></p>
+        </footer>
+    </div>
+
+    <!-- Loading indicator -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Creating your action plan...</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
