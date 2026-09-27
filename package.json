@@ -2,6 +2,34 @@
   "name": "lifepilot",
   "version": "1.0.0",
   "private": true,
-  "description": "AI-powered personal action assistant prototype",
-  "scripts": { "start": "python3 -m http.server 8000" }
+  "description": "LifePilot: Turn messy requests into executable plans. Standalone web app + MCP Apps integration for Streamable HTTP.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.server.json && cross-env INPUT=mcp-app.html vite build",
+    "mcp:start": "node dist/main.js",
+    "mcp:stdio": "node dist/main.js --stdio",
+    "mcp:dev": "cross-env NODE_ENV=development npm run build && node dist/main.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/express": "2.0.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.0",
+    "@modelcontextprotocol/node": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.0",
+    "@types/node": "22.10.0",
+    "cross-env": "^10.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.0.0",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
 }
