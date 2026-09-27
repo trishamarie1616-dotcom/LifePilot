@@ -2,10 +2,9 @@
 // This file is designed to remain compatible with normal static hosting and
 // later replacement by a real AI/agent layer without redesigning the UI.
 //
-// Future integration points:
-// - Replace MockAIGenerator.generate() with an MCP or AI model call.
-// - Replace RequestAnalyzer.extract() with an external agent or orchestration step.
-// - Keep AppState + LocalStorage structure stable for AWS Bedrock/AgentCore or Alexa+.
+// SHARED PLANNING ENGINE: RequestAnalyzer and MockAIGenerator are used by both
+// the standalone web app AND the MCP server (via server.ts import).
+// Do not modify the structure without testing both interfaces.
 
 const AppState = {
   plans: JSON.parse(localStorage.getItem('lifepilot-plans') || '[]'),
@@ -14,6 +13,10 @@ const AppState = {
 
 const $ = (id) => document.getElementById(id);
 const input = $('userInput');
+
+// ============================================================================
+// SHARED PLANNING ENGINE (used by both web app and MCP server)
+// ============================================================================
 
 const RequestAnalyzer = {
   extract(request) {
@@ -28,44 +31,54 @@ const RequestAnalyzer = {
       missingInformation: []
     };
 
+    // Extract year
     const yearMatch = cleanRequest.match(/\b(19|20)\d{2}\b/);
     if (yearMatch) details.entities.year = yearMatch[0];
 
+    // Extract vehicle make
     const makeMatch = cleanRequest.match(/\b(ford|chevy|chevrolet|toyota|honda|nissan|bmw|audi|volkswagen|hyundai|kia|jeep|dodge|ram|gmc|buick|cadillac|tesla|lexus|mazda|subaru|volvo|mercedes|porsche)\b/gi);
     if (makeMatch) details.entities.make = makeMatch[0];
 
+    // Extract vehicle model
     const modelMatch = cleanRequest.match(/\b(sentra|civic|accord|camry|corolla|f-150|silverado|focus|escape|mustang|cr-v|rav4|altima)\b/gi);
     if (modelMatch) details.entities.model = modelMatch[0];
 
+    // Extract diagnostic code (e.g., P0965)
     const codeMatch = cleanRequest.match(/p\d{4}/gi);
     if (codeMatch) {
       details.entities.diagnosticCode = codeMatch[0].toUpperCase();
     }
 
+    // Detect vehicle repair intent
     if (/(limp mode|warning light|transmission|engine|diagnostic code|vehicle|car|repair|mechanic|check engine)/i.test(cleanRequest)) {
       details.intent = 'vehicle_repair';
       details.context.push('Vehicle repair/diagnostic scenario');
     }
 
+    // Detect job search intent
     if (/(job|career|resume|interview|hiring|linkedin|application|job search|cover letter|recruiter)/i.test(cleanRequest)) {
       details.intent = 'job_search';
       details.context.push('Job-search or career-transition scenario');
     }
 
+    // Detect medical/doctor intent
     if (/(doctor|medical|appointment|health|clinic|dentist|physician|symptom|checkup|prescription)/i.test(cleanRequest)) {
       details.intent = 'doctor_appointment';
       details.context.push('Medical preparation or scheduling scenario');
     }
 
+    // Detect travel intent
     if (/(vacation|trip|travel|flight|hotel|destination|getaway|holiday|itinerary)/i.test(cleanRequest)) {
       details.intent = 'travel_planning';
       details.context.push('Travel or vacation planning scenario');
     }
 
+    // Detect user overwhelm signal
     if (/overwhelmed|dont know where to start|not sure where to start|stuck|confused/i.test(cleanRequest)) {
       details.context.push('User is overwhelmed or unsure where to start');
     }
 
+    // Populate missing information by intent
     if (details.intent === 'vehicle_repair') {
       details.missingInformation = [
         'Current mileage and maintenance history',
@@ -111,10 +124,6 @@ const RequestAnalyzer = {
         'Any realistic constraints or budget',
         'What support or resources you already have'
       ];
-    }
-
-    if (!details.entities.year && /\b(2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025)\b/.test(cleanRequest)) {
-      details.entities.year = cleanRequest.match(/\b(2014|2015|2016|2017|2018|2019|2020|2021|2022|2023|2024|2025)\b/)[0];
     }
 
     return details;
@@ -259,6 +268,10 @@ const MockAIGenerator = {
     };
   }
 };
+
+// ============================================================================
+// WEB APP UI LAYER (GitHub Pages standalone app)
+// ============================================================================
 
 function renderPlan(plan) {
   if (!plan) return;
@@ -448,5 +461,13 @@ function attachEventHandlers() {
   }
 }
 
-attachEventHandlers();
-renderSavedPlans();
+// Initialize the web app
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    attachEventHandlers();
+    renderSavedPlans();
+  });
+} else {
+  attachEventHandlers();
+  renderSavedPlans();
+}
