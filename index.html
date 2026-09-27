@@ -4,13 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="LifePilot - AI-powered personal action assistant that turns requests into actionable plans">
-    <title>LifePilot - Personal Action Assistant</title>
+    <title>LifePilot - Life Management Dashboard</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- Header with branding -->
-        <header class="app-header">
+        <!-- Dashboard Header -->
+        <header class="dashboard-header">
             <div class="header-content">
                 <div class="logo">
                     <span class="logo-icon">✈️</span>
@@ -20,97 +20,193 @@
             </div>
         </header>
 
-        <!-- Main content area -->
+        <!-- Main Content Area -->
         <main class="app-main">
-            <!-- Input section for user requests -->
-            <section class="input-section">
-                <div class="input-container">
-                    <textarea 
-                        id="userInput" 
-                        class="input-field" 
-                        placeholder="What do you need help accomplishing?"
-                        rows="3"
-                    ></textarea>
-                    <button id="submitBtn" class="submit-btn">
-                        <span>Generate Plan</span>
-                        <span class="btn-icon">→</span>
-                    </button>
+            <!-- My Planner Tab -->
+            <section id="planner-tab" class="tab-content tab-content-active">
+                <!-- Quick Add Section -->
+                <div class="quick-add-section">
+                    <div class="quick-add-header">
+                        <h2>Add to My Planner</h2>
+                    </div>
+                    <div class="task-input-group">
+                        <input 
+                            type="text" 
+                            id="taskInput" 
+                            class="task-input" 
+                            placeholder="What do you need to do?"
+                            maxlength="150"
+                        />
+                        <button id="addTaskBtn" class="btn btn-primary">Add Task</button>
+                    </div>
+                    <div class="priority-selector">
+                        <label for="prioritySelect">Priority:</label>
+                        <select id="prioritySelect" class="priority-select">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                        <label for="dueDateInput">Due Date:</label>
+                        <input type="date" id="dueDateInput" class="due-date-input" />
+                    </div>
                 </div>
 
-                <!-- Example prompts -->
-                <div class="examples-section">
-                    <p class="examples-label">Try asking:</p>
-                    <div class="examples-grid">
-                        <button class="example-btn" data-example="I need to get my car fixed.">
-                            🚗 Car Maintenance
-                        </button>
-                        <button class="example-btn" data-example="Help me organize my job search.">
-                            💼 Job Search
-                        </button>
-                        <button class="example-btn" data-example="I need to plan a doctor's appointment.">
-                            🏥 Doctor Visit
-                        </button>
-                        <button class="example-btn" data-example="Help me plan a vacation.">
-                            ✈️ Vacation Planning
-                        </button>
+                <!-- Tasks Display -->
+                <div class="tasks-section">
+                    <div class="tasks-header">
+                        <h3>Your Tasks</h3>
+                        <span class="task-count" id="taskCount">0</span>
+                    </div>
+                    <div class="tasks-list" id="tasksList">
+                        <div class="empty-state">
+                            <p>No tasks yet. Add one to get started!</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Generate My Plan Section -->
+                <div class="generate-plan-section">
+                    <div class="section-header">
+                        <h3>Generate My Plan</h3>
+                    </div>
+                    <div class="plan-input-group">
+                        <textarea 
+                            id="userInput" 
+                            class="plan-input" 
+                            placeholder="Describe what you need help accomplishing..."
+                            rows="3"
+                            maxlength="500"
+                        ></textarea>
+                        <button id="submitBtn" class="btn btn-primary">Generate Plan →</button>
+                    </div>
+
+                    <!-- Example Prompts -->
+                    <div class="examples-section">
+                        <p class="examples-label">Quick examples:</p>
+                        <div class="examples-grid">
+                            <button class="example-btn" data-example="I need to get my car fixed.">
+                                🚗 Car Maintenance
+                            </button>
+                            <button class="example-btn" data-example="Help me organize my job search.">
+                                💼 Job Search
+                            </button>
+                            <button class="example-btn" data-example="I need to plan a doctor's appointment.">
+                                🏥 Doctor Visit
+                            </button>
+                            <button class="example-btn" data-example="Help me plan a vacation.">
+                                ✈️ Vacation Planning
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Current Plan Display -->
+                    <div id="currentPlanContainer" class="plan-container" style="display: none;">
+                        <div class="plan-card">
+                            <button id="closePlanBtn" class="close-btn" title="Close plan">✕</button>
+
+                            <div class="plan-section">
+                                <h4 class="section-title">🎯 Your Goal</h4>
+                                <p id="planGoal" class="plan-goal"></p>
+                            </div>
+
+                            <div class="plan-section">
+                                <h4 class="section-title">📋 Action Items</h4>
+                                <ul id="planTasks" class="tasks-list"></ul>
+                            </div>
+
+                            <div class="plan-section">
+                                <h4 class="section-title">🚀 Next Steps</h4>
+                                <ol id="planNextSteps" class="steps-list"></ol>
+                            </div>
+
+                            <div class="plan-section">
+                                <h4 class="section-title">🔔 Follow-ups</h4>
+                                <ul id="planFollowups" class="followups-list"></ul>
+                            </div>
+
+                            <button id="savePlanBtn" class="btn btn-primary btn-full">💾 Save This Plan</button>
+                        </div>
+                    </div>
+
+                    <!-- Saved Plans List -->
+                    <div class="saved-plans-section" id="savedPlansSection" style="display: none;">
+                        <div class="section-header">
+                            <h3>Saved Plans</h3>
+                            <span class="plan-count" id="planCount">0</span>
+                        </div>
+                        <div id="plansList" class="plans-list"></div>
                     </div>
                 </div>
             </section>
 
-            <!-- Plans/Projects display section -->
-            <section class="plans-section">
-                <div class="plans-header">
-                    <h2>Your Active Plans</h2>
-                    <span id="plansCount" class="plans-count">0</span>
+            <!-- Documents Tab (Placeholder) -->
+            <section id="documents-tab" class="tab-content">
+                <div class="placeholder-section">
+                    <div class="placeholder-icon">📁</div>
+                    <h2>Documents</h2>
+                    <p class="placeholder-text">Store and organize your important documents.</p>
+                    <p class="coming-soon">🚀 Coming Soon</p>
+                    <button class="btn btn-secondary">Upload Documents</button>
                 </div>
+            </section>
 
-                <!-- Current plan display (when a plan is being viewed/created) -->
-                <div id="currentPlanContainer" class="plan-container" style="display: none;">
-                    <div class="plan-card current-plan">
-                        <div class="plan-close">
-                            <button id="closePlanBtn" class="close-btn" title="Close plan">✕</button>
-                        </div>
-
-                        <!-- Goal section -->
-                        <div class="plan-section">
-                            <h3 class="section-title">🎯 Your Goal</h3>
-                            <p id="planGoal" class="plan-goal"></p>
-                        </div>
-
-                        <!-- Tasks section -->
-                        <div class="plan-section">
-                            <h3 class="section-title">📋 Action Items</h3>
-                            <ul id="planTasks" class="tasks-list"></ul>
-                        </div>
-
-                        <!-- Next steps section -->
-                        <div class="plan-section">
-                            <h3 class="section-title">🚀 Next Steps</h3>
-                            <ol id="planNextSteps" class="steps-list"></ol>
-                        </div>
-
-                        <!-- Follow-ups section -->
-                        <div class="plan-section">
-                            <h3 class="section-title">🔔 Follow-ups</h3>
-                            <ul id="planFollowups" class="followups-list"></ul>
-                        </div>
-
-                        <!-- Save plan button -->
-                        <button id="savePlanBtn" class="save-plan-btn">
-                            💾 Save This Plan
-                        </button>
-                    </div>
+            <!-- My Goals Tab (Placeholder) -->
+            <section id="goals-tab" class="tab-content">
+                <div class="placeholder-section">
+                    <div class="placeholder-icon">🎯</div>
+                    <h2>My Goals</h2>
+                    <p class="placeholder-text">Track your milestones and progress.</p>
+                    <p class="coming-soon">🚀 Coming Soon</p>
+                    <button class="btn btn-secondary">Create Goal</button>
                 </div>
+            </section>
 
-                <!-- Saved plans list -->
-                <div id="plansListContainer" class="plans-list-container">
-                    <div id="plansList" class="plans-list"></div>
-                    <div id="emptyState" class="empty-state">
-                        <p>No plans yet. Ask LifePilot to help you accomplish something!</p>
-                    </div>
+            <!-- Daily Proactive Hacks Tab (Placeholder) -->
+            <section id="hacks-tab" class="tab-content">
+                <div class="placeholder-section">
+                    <div class="placeholder-icon">⚡</div>
+                    <h2>Daily Proactive Hacks</h2>
+                    <p class="placeholder-text">Discover productivity tips and life hacks.</p>
+                    <p class="coming-soon">🚀 Coming Soon</p>
+                    <button class="btn btn-secondary">Learn More</button>
+                </div>
+            </section>
+
+            <!-- AI Assistant Tab (Placeholder) -->
+            <section id="assistant-tab" class="tab-content">
+                <div class="placeholder-section">
+                    <div class="placeholder-icon">🤖</div>
+                    <h2>AI Assistant</h2>
+                    <p class="placeholder-text">Chat with your personal AI assistant.</p>
+                    <p class="coming-soon">🚀 Coming Soon</p>
+                    <button class="btn btn-secondary">Start Chat</button>
                 </div>
             </section>
         </main>
+
+        <!-- Bottom Navigation -->
+        <nav class="bottom-nav">
+            <button class="nav-btn nav-btn-active" data-tab="planner" aria-label="My Planner">
+                <span class="nav-icon">📋</span>
+                <span class="nav-label">Planner</span>
+            </button>
+            <button class="nav-btn" data-tab="documents" aria-label="Documents">
+                <span class="nav-icon">📁</span>
+                <span class="nav-label">Docs</span>
+            </button>
+            <button class="nav-btn" data-tab="goals" aria-label="My Goals">
+                <span class="nav-icon">🎯</span>
+                <span class="nav-label">Goals</span>
+            </button>
+            <button class="nav-btn" data-tab="hacks" aria-label="Daily Hacks">
+                <span class="nav-icon">⚡</span>
+                <span class="nav-label">Hacks</span>
+            </button>
+            <button class="nav-btn" data-tab="assistant" aria-label="AI Assistant">
+                <span class="nav-icon">🤖</span>
+                <span class="nav-label">AI</span>
+            </button>
+        </nav>
 
         <!-- Footer -->
         <footer class="app-footer">
@@ -118,7 +214,7 @@
         </footer>
     </div>
 
-    <!-- Loading indicator -->
+    <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay" style="display: none;">
         <div class="loading-spinner">
             <div class="spinner"></div>
