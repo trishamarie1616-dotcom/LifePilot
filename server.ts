@@ -58,7 +58,11 @@ interface Plan {
 const RequestAnalyzer = {
   extract(request: string): PlanAnalysis {
     const cleanRequest = String(request || '').trim();
-    const lowerRequest = cleanRequest.toLowerCase();
+    
+
+
+
+
 
     const details: PlanAnalysis = {
       originalRequest: cleanRequest,
