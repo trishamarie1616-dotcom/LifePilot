@@ -6,9 +6,25 @@
 // the standalone web app AND the MCP server (via server.ts import).
 // Do not modify the structure without testing both interfaces.
 
+function parseStoredJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 const AppState = {
-  plans: JSON.parse(localStorage.getItem('lifepilot-plans') || '[]'),
+  plans: parseStoredJSON('lifepilot-plans', []),
+  tasks: parseStoredJSON('lifepilot-planner-tasks', []),
   currentPlan: null
+};
+
+const PRIORITY_RANK = {
+  high: 0,
+  medium: 1,
+  low: 2
 };
 
 const $ = (id) => document.getElementById(id);
@@ -311,14 +327,21 @@ function renderPlan(plan) {
 }
 
 function renderSavedPlans() {
-  const countEl = $('plansCount');
-  const emptyState = $('emptyState');
+  const countEl = $('planCount');
   const plansList = $('plansList');
+  const savedPlansSection = $('savedPlansSection');
 
-  if (!countEl || !emptyState || !plansList) return;
+  if (!countEl || !plansList || !savedPlansSection) return;
 
   countEl.textContent = String(AppState.plans.length);
-  emptyState.style.display = AppState.plans.length ? 'none' : 'block';
+
+  if (!AppState.plans.length) {
+    savedPlansSection.style.display = 'none';
+    plansList.innerHTML = '';
+    return;
+  }
+
+  savedPlansSection.style.display = 'block';
 
   plansList.innerHTML = AppState.plans
     .map((plan, index) => `
@@ -403,7 +426,203 @@ function saveCurrentPlan() {
   }
 }
 
+function saveTasks() {
+  localStorage.setItem('lifepilot-planner-tasks', JSON.stringify(AppState.tasks));
+}
+
+function getTaskTimestamp(value) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date.getTime();
+}
+
+function formatDueDate(value) {
+  const timestamp = getTaskTimestamp(value);
+  return timestamp ? new Date(timestamp).toLocaleDateString() : 'No due date';
+}
+
+function sortTasks(tasks) {
+  return [...tasks].sort((a, b) => {
+    if (a.completed !== b.completed) return a.completed ? 1 : -1;
+
+    const priorityDiff = (PRIORITY_RANK[a.priority] ?? 99) - (PRIORITY_RANK[b.priority] ?? 99);
+    if (priorityDiff !== 0) return priorityDiff;
+
+    const aDue = getTaskTimestamp(a.dueDate);
+    const bDue = getTaskTimestamp(b.dueDate);
+
+    if (aDue === null && bDue !== null) return 1;
+    if (aDue !== null && bDue === null) return -1;
+    if (aDue !== null && bDue !== null && aDue !== bDue) return aDue - bDue;
+
+    return (b.createdAt || 0) - (a.createdAt || 0);
+  });
+}
+
+function renderPlannerTasks() {
+  const tasksList = $('tasksList');
+  const taskCount = $('taskCount');
+  if (!tasksList || !taskCount) return;
+
+  const sortedTasks = sortTasks(AppState.tasks);
+  taskCount.textContent = String(sortedTasks.length);
+
+  if (!sortedTasks.length) {
+    tasksList.innerHTML = `
+      <div class="empty-state">
+        <p>No tasks yet. Add one to get started!</p>
+      </div>
+    `;
+    return;
+  }
+
+  tasksList.innerHTML = sortedTasks
+    .map((task) => `
+      <article class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
+        <input
+          type="checkbox"
+          class="task-checkbox"
+          data-task-action="toggle"
+          data-task-id="${task.id}"
+          aria-label="Mark task complete"
+          ${task.completed ? 'checked' : ''}
+        />
+        <div class="task-content">
+          <p class="task-title">${escapeHTML(task.title)}</p>
+          <div class="task-meta">
+            <span class="task-priority ${escapeHTML(task.priority)}">${escapeHTML(task.priority)}</span>
+            <span>Due: ${escapeHTML(formatDueDate(task.dueDate))}</span>
+          </div>
+        </div>
+        <button
+          class="task-delete"
+          type="button"
+          data-task-action="delete"
+          data-task-id="${task.id}"
+          aria-label="Delete task"
+          title="Delete task"
+        >✕</button>
+      </article>
+    `)
+    .join('');
+}
+
+function addPlannerTask() {
+  const taskInput = $('taskInput');
+  const prioritySelect = $('prioritySelect');
+  const dueDateInput = $('dueDateInput');
+  if (!taskInput || !prioritySelect || !dueDateInput) return;
+
+  const title = taskInput.value.trim();
+  if (!title) {
+    taskInput.focus();
+    return;
+  }
+
+  AppState.tasks.push({
+    id: Date.now().toString(),
+    title,
+    priority: prioritySelect.value || 'medium',
+    dueDate: dueDateInput.value || '',
+    completed: false,
+    createdAt: Date.now()
+  });
+
+  saveTasks();
+  renderPlannerTasks();
+
+  taskInput.value = '';
+  dueDateInput.value = '';
+  prioritySelect.value = 'medium';
+  taskInput.focus();
+}
+
+function updateTask(taskId, updater) {
+  const index = AppState.tasks.findIndex((task) => task.id === taskId);
+  if (index === -1) return;
+  AppState.tasks[index] = updater(AppState.tasks[index]);
+  saveTasks();
+  renderPlannerTasks();
+}
+
+function deleteTask(taskId) {
+  const nextTasks = AppState.tasks.filter((task) => task.id !== taskId);
+  if (nextTasks.length === AppState.tasks.length) return;
+  AppState.tasks = nextTasks;
+  saveTasks();
+  renderPlannerTasks();
+}
+
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach((section) => {
+    section.classList.toggle('tab-content-active', section.id === `${tabName}-tab`);
+  });
+
+  document.querySelectorAll('.nav-btn').forEach((button) => {
+    button.classList.toggle('nav-btn-active', button.dataset.tab === tabName);
+  });
+}
+
+function attachPlannerEventHandlers() {
+  const addTaskBtn = $('addTaskBtn');
+  const taskInput = $('taskInput');
+  const tasksList = $('tasksList');
+
+  if (addTaskBtn) {
+    addTaskBtn.addEventListener('click', addPlannerTask);
+  }
+
+  if (taskInput) {
+    taskInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        addPlannerTask();
+      }
+    });
+  }
+
+  if (tasksList) {
+    tasksList.addEventListener('click', (event) => {
+      const target = event.target.closest('[data-task-action]');
+      if (!target) return;
+
+      const { taskAction, taskId } = target.dataset;
+      if (!taskId) return;
+
+      if (taskAction === 'delete') {
+        deleteTask(taskId);
+      }
+    });
+
+    tasksList.addEventListener('change', (event) => {
+      const target = event.target.closest('[data-task-action="toggle"]');
+      if (!target) return;
+
+      const { taskId } = target.dataset;
+      if (!taskId) return;
+
+      updateTask(taskId, (task) => ({
+        ...task,
+        completed: Boolean(target.checked)
+      }));
+    });
+  }
+}
+
+function attachTabNavigationHandlers() {
+  document.querySelectorAll('.nav-btn').forEach((button) => {
+    button.addEventListener('click', () => {
+      const tabName = button.dataset.tab;
+      if (!tabName) return;
+      switchTab(tabName);
+    });
+  });
+}
+
 function attachEventHandlers() {
+  attachPlannerEventHandlers();
+  attachTabNavigationHandlers();
+
   const submitBtn = $('submitBtn');
   if (submitBtn) {
     submitBtn.addEventListener('click', generatePlanFromRequest);
@@ -465,9 +684,11 @@ function attachEventHandlers() {
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     attachEventHandlers();
+    renderPlannerTasks();
     renderSavedPlans();
   });
 } else {
   attachEventHandlers();
+  renderPlannerTasks();
   renderSavedPlans();
 }
