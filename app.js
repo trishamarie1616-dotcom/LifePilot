@@ -20,7 +20,8 @@ const AppState = {
   tasks: parseStoredJSON('lifepilot-planner-tasks', []),
   currentPlan: null,
   askAttachments: [],
-  askLastResponse: null
+  askLastResponse: null,
+  askLastImportedSignature: null
 };
 
 const PRIORITY_RANK = {
@@ -741,6 +742,7 @@ async function attachFilesToAsk(files) {
 
     AppState.askAttachments.push(...encoded);
     renderAttachmentPreviews();
+    setAskError('');
   } catch (error) {
     console.error('Attachment read error:', error);
     setAskError('One or more attachments could not be read. Please try again.');
@@ -790,11 +792,17 @@ async function submitAskLifePilot() {
     }
 
     AppState.askLastResponse = payload;
+    AppState.askLastImportedSignature = null;
     renderAskResponse(payload);
   } catch (error) {
     console.error('Ask request failed:', error);
-    const message = error instanceof Error ? error.message : 'Unable to reach AI backend right now.';
-    setAskError(`${message} Please retry after checking your backend connection.`);
+    if (error instanceof TypeError) {
+      setAskError('Unable to reach AI backend right now. Please retry after checking your backend connection.');
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : 'Ask LifePilot failed. Please retry.';
+    setAskError(message);
   } finally {
     setAskLoadingState(false);
   }
@@ -809,8 +817,23 @@ function addRecommendedActionsToPlanner() {
     return;
   }
 
+  const importSignature = actions.join('||').toLowerCase();
+  if (AppState.askLastImportedSignature === importSignature) {
+    setAskError('These actions were already added to your planner for this response.');
+    return;
+  }
+
+  const existingTitles = new Set(
+    AppState.tasks.map((task) => String(task.title || '').trim().toLowerCase()).filter(Boolean)
+  );
+  const actionsToAdd = actions.filter((action) => !existingTitles.has(action.toLowerCase()));
+  if (!actionsToAdd.length) {
+    setAskError('All recommended actions are already in your planner.');
+    return;
+  }
+
   const now = Date.now();
-  actions.forEach((action, index) => {
+  actionsToAdd.forEach((action, index) => {
     AppState.tasks.push({
       id: `${now}-${index}`,
       title: String(action).trim(),
@@ -821,6 +844,8 @@ function addRecommendedActionsToPlanner() {
     });
   });
 
+  AppState.askLastImportedSignature = importSignature;
+  setAskError('');
   saveTasks();
   renderPlannerTasks();
   switchTab('planner');
