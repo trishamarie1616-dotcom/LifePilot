@@ -16,7 +16,10 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import cors from 'cors';
+import express from 'express';
 import type { Request, Response } from 'express';
+import { createAIService } from './ai-service.js';
+import { getFrontendApiBaseFromEnv, normalizeAskRequest } from './api.js';
 import { createServer } from './server.js';
 
 /**
@@ -25,9 +28,31 @@ import { createServer } from './server.js';
  */
 async function startStreamableHTTPServer(createServerFn: () => McpServer): Promise<void> {
   const port = parseInt(process.env.PORT ?? '3001', 10);
+  const aiService = createAIService();
+  const frontendApiBase = getFrontendApiBaseFromEnv();
 
   const app = createMcpExpressApp({ host: '0.0.0.0' });
+  app.use(express.json({ limit: '12mb' }));
   app.use(cors());
+
+  app.get('/api/config', (_req: Request, res: Response) => {
+    res.json({
+      apiBaseUrl: frontendApiBase
+    });
+  });
+
+  app.post('/api/ask', async (req: Request, res: Response) => {
+    try {
+      const askRequest = normalizeAskRequest(req.body);
+      const result = await aiService.answer(askRequest);
+      res.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({
+        message
+      });
+    }
+  });
 
   // MCP endpoint: POST /mcp
   app.all('/mcp', async (req: Request, res: Response) => {

@@ -556,6 +556,116 @@ input:focus, textarea:focus, select:focus {
   color: var(--teal-dark);
 }
 
+/* Ask LifePilot */
+.ask-section {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow-light);
+  padding: 20px;
+}
+
+.ask-header {
+  margin-bottom: 8px;
+}
+
+.ask-subtitle {
+  margin: 0 0 16px 0;
+  color: var(--muted);
+}
+
+.ask-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.ask-mode-demo {
+  background: rgba(245, 158, 11, 0.16);
+  color: #92400e;
+}
+
+.ask-mode-ai {
+  background: var(--teal-lighter);
+  color: #0f766e;
+}
+
+.ask-actions-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ask-helptext {
+  margin: 8px 0 12px 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.attachment-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.attachment-preview-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--soft);
+}
+
+.attachment-preview-meta {
+  min-width: 0;
+}
+
+.attachment-preview-name {
+  margin: 0 0 2px 0;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.attachment-preview-size {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.attachment-remove-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 9px;
+}
+
+.attachment-remove-btn:hover {
+  color: #b91c1c;
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+
+.ask-error {
+  margin: 8px 0 12px 0;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.ask-response {
+  margin-top: 12px;
+}
+
 /* Plans List */
 .plans-list {
   display: flex;
