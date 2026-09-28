@@ -732,13 +732,19 @@ function removeAssistantAttachment(attachmentId) {
 
 function restoreAssistantAttachments(attachments) {
   AppState.assistantAttachments.forEach(releaseAttachmentPreview);
-  AppState.assistantAttachments = (attachments || []).map(createAttachmentState);
+  const retryableAttachments = (attachments || []).filter((attachment) => attachment?.file);
+  AppState.assistantAttachments = retryableAttachments.map(createAttachmentState);
   renderAttachmentPreviews();
 
   const inputEl = $('fileUpload');
   if (inputEl) {
     inputEl.value = '';
   }
+
+  return {
+    restoredCount: retryableAttachments.length,
+    skippedCount: (attachments || []).length - retryableAttachments.length
+  };
 }
 
 function showAssistantError(message) {
@@ -989,12 +995,13 @@ function handleAttachmentSelection(event) {
   if (!files.length) return;
 
   const nextAttachments = [...AppState.assistantAttachments];
+  const validationErrors = [];
   let acceptedCount = 0;
 
   for (const file of files) {
     const error = validateAttachment(file);
     if (error) {
-      showAssistantError(error);
+      validationErrors.push(`${file.name}: ${error}`);
       continue;
     }
 
@@ -1025,7 +1032,9 @@ function handleAttachmentSelection(event) {
   AppState.assistantAttachments = nextAttachments;
   renderAttachmentPreviews();
 
-  if (acceptedCount > 0) {
+  if (validationErrors.length) {
+    showAssistantError(validationErrors.join(' '));
+  } else if (acceptedCount > 0) {
     hideAssistantError();
   }
 }
@@ -1095,8 +1104,15 @@ function attachAIAssistantHandlers() {
         if (questionInput) {
           questionInput.value = lastQuestion;
         }
-        restoreAssistantAttachments(attachments);
-        submitAssistantQuestion({ question: lastQuestion, attachments });
+        const { skippedCount } = restoreAssistantAttachments(attachments);
+        if (skippedCount > 0) {
+          showAssistantError('Some previous attachments are no longer available for retry. Please re-upload them before trying again.');
+          return;
+        }
+        submitAssistantQuestion({
+          question: lastQuestion,
+          attachments: AppState.assistantAttachments.map(cloneAttachmentForRequest)
+        });
       } else {
         showAssistantError('There is no previous LifePilot request to retry yet.');
       }
