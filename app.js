@@ -21,7 +21,8 @@ const AppState = {
   currentPlan: null,
   askAttachments: [],
   askLastResponse: null,
-  askLastImportedSignature: null
+  askResponseToken: 0,
+  askLastImportedToken: null
 };
 
 const PRIORITY_RANK = {
@@ -791,7 +792,8 @@ async function submitAskLifePilot() {
     }
 
     AppState.askLastResponse = payload;
-    AppState.askLastImportedSignature = null;
+    AppState.askResponseToken += 1;
+    AppState.askLastImportedToken = null;
     renderAskResponse(payload);
   } catch (error) {
     console.error('Ask request failed:', error);
@@ -816,8 +818,7 @@ function addRecommendedActionsToPlanner() {
     return;
   }
 
-  const importSignature = actions.join('||').toLowerCase();
-  if (AppState.askLastImportedSignature === importSignature) {
+  if (AppState.askLastImportedToken === AppState.askResponseToken) {
     setAskError('These actions were already added to your planner for this response.');
     return;
   }
@@ -843,7 +844,7 @@ function addRecommendedActionsToPlanner() {
     });
   });
 
-  AppState.askLastImportedSignature = importSignature;
+  AppState.askLastImportedToken = AppState.askResponseToken;
   setAskError('');
   saveTasks();
   renderPlannerTasks();

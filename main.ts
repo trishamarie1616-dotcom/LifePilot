@@ -51,9 +51,9 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
       const result = await aiService.answer(askRequest);
       res.json(result);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('AI service failed:', error);
       res.status(500).json({
-        message: `AI service failed: ${message}`
+        message: 'AI service failed. Please try again.'
       });
     }
   });
