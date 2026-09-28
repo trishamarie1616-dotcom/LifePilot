@@ -21,7 +21,9 @@ const AppState = {
   currentPlan: null,
   assistantAttachments: [],
   lastAssistantRequest: null,
-  lastAssistantResponse: null
+  lastAssistantResponse: null,
+  assistantHandlersBound: false,
+  eventHandlersBound: false
 };
 
 const PRIORITY_RANK = {
@@ -728,13 +730,13 @@ function closeAssistantResponse() {
   }
 }
 
-function renderAssistantList(elementId, items, ordered = false) {
+function renderAssistantList(elementId, items) {
   const element = $(elementId);
   if (!element) return;
 
   const safeItems = (items || []).filter(Boolean);
   element.innerHTML = safeItems
-    .map((item) => ordered ? `<li>${escapeHTML(item)}</li>` : `<li>${escapeHTML(item)}</li>`)
+    .map((item) => `<li>${escapeHTML(item)}</li>`)
     .join('');
 }
 
@@ -787,7 +789,7 @@ function renderAssistantResponse(response) {
   toggleAssistantSection('followupsSection', Boolean(response.followups.length));
 
   renderAssistantList('aiUncertainties', response.uncertainties);
-  renderAssistantList('aiActions', response.actions, true);
+  renderAssistantList('aiActions', response.actions);
   renderAssistantList('aiFollowups', response.followups);
 
   if (responseContainer) {
@@ -852,7 +854,10 @@ async function submitAssistantQuestion(overrideRequest) {
     askButton.disabled = true;
   }
 
-  AppState.lastAssistantRequest = request;
+  AppState.lastAssistantRequest = {
+    question: request.question,
+    attachments: (request.attachments || []).map((attachment) => ({ ...attachment }))
+  };
 
   try {
     const provider = getAIProvider();
@@ -975,6 +980,11 @@ function attachAIAssistantHandlers() {
   setAIModeBadge();
   renderAttachmentPreviews();
 
+  if (AppState.assistantHandlersBound) {
+    return;
+  }
+  AppState.assistantHandlersBound = true;
+
   if (askButton) {
     askButton.addEventListener('click', () => {
       submitAssistantQuestion();
@@ -1096,6 +1106,11 @@ function attachTabNavigationHandlers() {
 }
 
 function attachEventHandlers() {
+  if (AppState.eventHandlersBound) {
+    return;
+  }
+  AppState.eventHandlersBound = true;
+
   attachPlannerEventHandlers();
   attachTabNavigationHandlers();
   attachAIAssistantHandlers();
