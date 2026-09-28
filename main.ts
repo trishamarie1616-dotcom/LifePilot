@@ -15,9 +15,214 @@ import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import cors from 'cors';
-import type { Request, Response } from 'express';
+import express, { type Request, type Response } from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import { createServer } from './server.js';
+
+const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
+const APP_ROOT = path.basename(CURRENT_DIR) === 'dist' ? path.resolve(CURRENT_DIR, '..') : CURRENT_DIR;
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const SUPPORTED_ATTACHMENT_TYPES = new Map([
+  ['image/jpeg', { kind: 'image', format: 'jpeg' }],
+  ['image/png', { kind: 'image', format: 'png' }],
+  ['image/webp', { kind: 'image', format: 'webp' }],
+  ['application/pdf', { kind: 'document', format: 'pdf' }],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', { kind: 'document', format: 'docx' }]
+]);
+
+const askRequestSchema = z.object({
+  question: z.string().trim().min(1).max(1000),
+  attachments: z.array(z.object({
+    name: z.string().trim().min(1).max(120),
+    type: z.string().trim().min(1),
+    size: z.number().int().nonnegative(),
+    base64: z.string().trim().min(1)
+  })).default([])
+});
+
+type AskRequest = z.infer<typeof askRequestSchema>;
+
+type AssistantResponsePayload = {
+  mode: 'ai' | 'demo';
+  answer: string;
+  explanation: string;
+  uncertainties: string[];
+  actions: string[];
+  followUpQuestions: string[];
+};
+
+function sanitizeAttachmentName(name: string): string {
+  const sanitized = path.basename(name).replace(/[^\w.\- ]+/g, '_').slice(0, 80).trim();
+  return sanitized || 'attachment';
+}
+
+function hasBedrockConfiguration(): boolean {
+  return Boolean(process.env.AWS_REGION && process.env.BEDROCK_MODEL_ID);
+}
+
+function validateAttachments(attachments: AskRequest['attachments']): string | null {
+  for (const attachment of attachments) {
+    const supportedType = SUPPORTED_ATTACHMENT_TYPES.get(attachment.type);
+    if (!supportedType) {
+      return `Unsupported file type: ${attachment.name}. Supported files are JPG, PNG, WEBP, PDF, and DOCX.`;
+    }
+
+    if (attachment.size > MAX_ATTACHMENT_SIZE) {
+      return `${attachment.name} exceeds the 10MB file limit.`;
+    }
+  }
+
+  return null;
+}
+
+function createDemoResponse(question: string, attachments: AskRequest['attachments'], reason?: string): AssistantResponsePayload {
+  const attachmentNames = attachments.map((attachment) => attachment.name).join(', ');
+  const reasonText = reason ? ` ${reason}` : '';
+
+  return {
+    mode: 'demo',
+    answer: attachmentNames
+      ? `Demo Mode is active, so I could not run a live Bedrock analysis on ${attachmentNames}.${reasonText} Based on your question, start by identifying the most important facts in those files and the outcome you want next.`
+      : `Demo Mode is active, so I could not run a live Bedrock analysis.${reasonText} I can still provide a structured prototype response for your question.`,
+    explanation: `Question received: "${question}". This fallback keeps the AI Assistant, upload flow, and Add to My Planner experience testable without exposing AWS credentials in the frontend.`,
+    uncertainties: [
+      attachmentNames ? 'Uploaded files were not inspected by a live model in demo mode.' : 'No live model was available to verify the answer.',
+      'Enable AWS_REGION and BEDROCK_MODEL_ID with valid Bedrock credentials to switch from demo mode to AI-powered responses.'
+    ],
+    actions: [
+      'Write down the exact result you need from this question.',
+      attachmentNames ? 'Review the uploaded files and highlight the details that matter most.' : 'Gather any screenshots, PDFs, or notes that would help answer the question.',
+      'Turn the first concrete next step into a planner task.'
+    ],
+    followUpQuestions: [
+      'What would a successful outcome look like for you?',
+      'Is there a deadline or urgent blocker involved?'
+    ]
+  };
+}
+
+function extractJsonObject(rawText: string): string {
+  const firstBrace = rawText.indexOf('{');
+  const lastBrace = rawText.lastIndexOf('}');
+  return firstBrace >= 0 && lastBrace > firstBrace ? rawText.slice(firstBrace, lastBrace + 1) : rawText;
+}
+
+function normalizeAssistantResponse(payload: unknown, mode: AssistantResponsePayload['mode']): AssistantResponsePayload {
+  const data = typeof payload === 'object' && payload ? payload as Record<string, unknown> : {};
+
+  const normalizeList = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value.map((item) => String(item || '').trim()).filter(Boolean)
+      : [];
+
+  return {
+    mode,
+    answer: String(data.answer || '').trim() || 'No answer was returned.',
+    explanation: String(data.explanation || '').trim() || 'No explanation was returned.',
+    uncertainties: normalizeList(data.uncertainties),
+    actions: normalizeList(data.actions),
+    followUpQuestions: normalizeList(data.followUpQuestions)
+  };
+}
+
+async function askBedrock(question: string, attachments: AskRequest['attachments']): Promise<AssistantResponsePayload> {
+  if (!hasBedrockConfiguration()) {
+    return createDemoResponse(question, attachments, 'Missing AWS configuration for Bedrock.');
+  }
+
+  const client = new BedrockRuntimeClient({
+    region: process.env.AWS_REGION
+  });
+
+  const attachmentSummary = attachments.length
+    ? attachments.map((attachment) => `- ${attachment.name} (${attachment.type}, ${Math.round(attachment.size / 1024)} KB)`).join('\n')
+    : 'No attachments provided.';
+
+  const contentBlocks: unknown[] = [
+    {
+      text: [
+        'Question:',
+        question,
+        '',
+        'Attachments:',
+        attachmentSummary,
+        '',
+        'Return valid JSON only with these keys: answer, explanation, uncertainties, actions, followUpQuestions.',
+        'Keep uncertainties and followUpQuestions as arrays, and make actions concrete enough to add to a planner.'
+      ].join('\n')
+    }
+  ];
+
+  for (const attachment of attachments) {
+    const supportedType = SUPPORTED_ATTACHMENT_TYPES.get(attachment.type);
+    if (!supportedType) {
+      continue;
+    }
+
+    const bytes = Uint8Array.from(Buffer.from(attachment.base64, 'base64'));
+
+    if (supportedType.kind === 'image') {
+      contentBlocks.push({
+        image: {
+          format: supportedType.format,
+          source: { bytes }
+        }
+      });
+    } else {
+      contentBlocks.push({
+        document: {
+          format: supportedType.format,
+          name: sanitizeAttachmentName(attachment.name),
+          source: { bytes }
+        }
+      });
+    }
+  }
+
+  try {
+    const response = await client.send(
+      new ConverseCommand({
+        modelId: process.env.BEDROCK_MODEL_ID,
+        system: [
+          {
+            text: [
+              'You are LifePilot, a practical AI assistant.',
+              'Answer the user question directly before suggesting actions.',
+              'Use the attachments if they are relevant.',
+              'Return valid JSON only with keys: answer, explanation, uncertainties, actions, followUpQuestions.',
+              'uncertainties, actions, and followUpQuestions must be arrays of strings.'
+            ].join(' ')
+          }
+        ],
+        messages: [
+          {
+            role: 'user',
+            content: contentBlocks as never
+          }
+        ],
+        inferenceConfig: {
+          temperature: 0.3,
+          maxTokens: 900
+        }
+      })
+    );
+
+    const textResponse = (response.output?.message?.content || [])
+      .map((item) => item.text || '')
+      .join('\n')
+      .trim();
+
+    const parsed = JSON.parse(extractJsonObject(textResponse));
+    return normalizeAssistantResponse(parsed, 'ai');
+  } catch (error) {
+    console.error('Bedrock request failed:', error);
+    return createDemoResponse(question, attachments, 'The Bedrock request failed, so a clearly labeled fallback response was used.');
+  }
+}
 
 /**
  * Start Streamable HTTP transport server (stateless, per-request)
@@ -28,6 +233,26 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
 
   const app = createMcpExpressApp({ host: '0.0.0.0' });
   app.use(cors());
+
+  app.post('/api/ask', express.json({ limit: '30mb' }), async (req: Request, res: Response) => {
+    const parsed = askRequestSchema.safeParse(req.body);
+
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Invalid request payload. Provide a question and optional attachments.'
+      });
+      return;
+    }
+
+    const validationError = validateAttachments(parsed.data.attachments);
+    if (validationError) {
+      res.status(400).json({ error: validationError });
+      return;
+    }
+
+    const response = await askBedrock(parsed.data.question, parsed.data.attachments);
+    res.json(response);
+  });
 
   // MCP endpoint: POST /mcp
   app.all('/mcp', async (req: Request, res: Response) => {
@@ -55,6 +280,8 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
       }
     }
   });
+
+  app.use(express.static(APP_ROOT));
 
   const httpServer = app.listen(port, (err) => {
     if (err) {

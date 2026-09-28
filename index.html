@@ -161,14 +161,81 @@
                 </div>
             </section>
 
-            <!-- AI Assistant Tab (Placeholder) -->
+            <!-- AI Assistant Tab -->
             <section id="assistant-tab" class="tab-content">
-                <div class="placeholder-section">
-                    <div class="placeholder-icon">🤖</div>
-                    <h2>AI Assistant</h2>
-                    <p class="placeholder-text">Chat with your personal AI assistant.</p>
-                    <p class="coming-soon">🚀 Coming Soon</p>
-                    <button class="btn btn-secondary">Start Chat</button>
+                <div class="assistant-shell">
+                    <div class="assistant-hero">
+                        <div>
+                            <p class="assistant-eyebrow">Ask LifePilot</p>
+                            <h2>AI Assistant</h2>
+                            <p class="placeholder-text">Ask detailed questions, attach photos or documents, and turn recommendations into planner tasks.</p>
+                        </div>
+                        <span id="assistantModeBadge" class="assistant-badge assistant-badge-demo">🔄 Demo Mode</span>
+                    </div>
+
+                    <div class="assistant-card">
+                        <label for="aiQuestionInput" class="assistant-label">What do you need help with?</label>
+                        <textarea
+                            id="aiQuestionInput"
+                            class="plan-input"
+                            placeholder="Ask a question about a task, problem, photo, screenshot, or PDF..."
+                            rows="4"
+                            maxlength="1000"
+                        ></textarea>
+
+                        <div class="assistant-actions">
+                            <input
+                                type="file"
+                                id="assistantFileInput"
+                                accept=".jpg,.jpeg,.png,.pdf,.docx,.webp,image/jpeg,image/png,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/webp"
+                                multiple
+                                hidden
+                            />
+                            <button id="assistantAttachBtn" class="btn btn-secondary" type="button">📎 Add Attachment</button>
+                            <button id="assistantSubmitBtn" class="btn btn-primary" type="button">Ask LifePilot</button>
+                        </div>
+                        <p class="assistant-help-text">Supported: JPG, PNG, WEBP, PDF, DOCX • Max 10MB per file</p>
+                        <p id="assistantError" class="assistant-feedback assistant-error" style="display: none;"></p>
+                        <p id="assistantPlannerFeedback" class="assistant-feedback assistant-success" style="display: none;"></p>
+                        <div id="assistantAttachmentList" class="attachment-list"></div>
+                    </div>
+
+                    <div id="assistantResponseCard" class="assistant-response-card" style="display: none;">
+                        <div class="assistant-response-header">
+                            <h3>LifePilot Response</h3>
+                            <span id="assistantResponseBadge" class="assistant-badge assistant-badge-demo">🔄 Demo Mode</span>
+                        </div>
+
+                        <div class="assistant-section">
+                            <h4 class="section-title">Direct Answer</h4>
+                            <p id="assistantAnswer" class="assistant-copy"></p>
+                        </div>
+
+                        <div class="assistant-section">
+                            <h4 class="section-title">Explanation</h4>
+                            <p id="assistantExplanation" class="assistant-copy"></p>
+                        </div>
+
+                        <div id="assistantUncertaintiesSection" class="assistant-section">
+                            <h4 class="section-title">Uncertainties</h4>
+                            <ul id="assistantUncertainties" class="followups-list"></ul>
+                        </div>
+
+                        <div class="assistant-section">
+                            <h4 class="section-title">Recommended Actions</h4>
+                            <ul id="assistantActions" class="tasks-list assistant-action-list"></ul>
+                            <button id="assistantAddToPlannerBtn" class="btn btn-primary btn-full" type="button">Add to My Planner</button>
+                        </div>
+
+                        <div id="assistantFollowupsSection" class="assistant-section">
+                            <h4 class="section-title">Follow-up Questions</h4>
+                            <ul id="assistantFollowups" class="followups-list"></ul>
+                        </div>
+                    </div>
+
+                    <div id="assistantEmptyState" class="empty-state">
+                        <p>Ask a question to receive an answer, explanation, uncertainties, and suggested next steps.</p>
+                    </div>
                 </div>
             </section>
         </main>
@@ -203,7 +270,7 @@
     <div id="loadingOverlay" class="loading-overlay" style="display: none;">
         <div class="loading-spinner">
             <div class="spinner"></div>
-            <p>Creating your action plan...</p>
+            <p id="loadingMessage">Creating your action plan...</p>
         </div>
     </div>
 
