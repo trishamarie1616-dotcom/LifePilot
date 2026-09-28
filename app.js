@@ -734,6 +734,11 @@ function restoreAssistantAttachments(attachments) {
   AppState.assistantAttachments.forEach(releaseAttachmentPreview);
   AppState.assistantAttachments = (attachments || []).map(createAttachmentState);
   renderAttachmentPreviews();
+
+  const inputEl = $('fileUpload');
+  if (inputEl) {
+    inputEl.value = '';
+  }
 }
 
 function showAssistantError(message) {
@@ -906,6 +911,7 @@ async function submitAssistantQuestion(overrideRequest) {
     askButton.disabled = true;
   }
 
+  AppState.lastAssistantResponse = null;
   AppState.lastAssistantRequest = {
     question: request.question,
     attachments: request.attachments.map(cloneAttachmentForRequest)
@@ -983,6 +989,7 @@ function handleAttachmentSelection(event) {
   if (!files.length) return;
 
   const nextAttachments = [...AppState.assistantAttachments];
+  let acceptedCount = 0;
 
   for (const file of files) {
     const error = validateAttachment(file);
@@ -1012,10 +1019,15 @@ function handleAttachmentSelection(event) {
       lastModified: file.lastModified,
       previewUrl: IMAGE_ATTACHMENT_EXTENSIONS.has(extension) ? URL.createObjectURL(file) : ''
     });
+    acceptedCount += 1;
   }
 
   AppState.assistantAttachments = nextAttachments;
   renderAttachmentPreviews();
+
+  if (acceptedCount > 0) {
+    hideAssistantError();
+  }
 }
 
 function attachAIAssistantHandlers() {
