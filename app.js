@@ -35,6 +35,17 @@ const PRIORITY_RANK = {
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'pdf', 'docx', 'webp']);
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
+const ALLOWED_ATTACHMENT_MIME_TYPES = {
+  jpg: new Set(['image/jpeg']),
+  jpeg: new Set(['image/jpeg']),
+  png: new Set(['image/png']),
+  pdf: new Set(['application/pdf']),
+  docx: new Set([
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/octet-stream'
+  ]),
+  webp: new Set(['image/webp'])
+};
 
 const $ = (id) => document.getElementById(id);
 const input = $('userInput');
@@ -610,6 +621,11 @@ function validateAttachment(file) {
     return 'Unsupported file type. Please upload JPG, PNG, PDF, DOCX, or WebP files only.';
   }
 
+  const allowedMimeTypes = ALLOWED_ATTACHMENT_MIME_TYPES[extension];
+  if (file.type && allowedMimeTypes && !allowedMimeTypes.has(file.type)) {
+    return 'Unsupported file type. Please upload JPG, PNG, PDF, DOCX, or WebP files only.';
+  }
+
   if (file.size > MAX_ATTACHMENT_SIZE) {
     return `“${file.name}” is larger than 10MB.`;
   }
@@ -825,17 +841,21 @@ function generateDemoAssistantResponse(question, attachments) {
   return response;
 }
 
-async function submitAssistantQuestion(overrideRequest) {
+function getCurrentAssistantRequest(questionOverride = '') {
   const questionInput = $('aiQuestion');
+  return {
+    question: String(questionOverride || questionInput?.value || '').trim(),
+    attachments: AppState.assistantAttachments.map((attachment) => ({ ...attachment }))
+  };
+}
+
+async function submitAssistantQuestion(overrideRequest) {
   const askButton = $('askLifePilotBtn');
   const loadingOverlay = $('aiLoadingOverlay');
-
-  const request = overrideRequest || {
-    question: questionInput ? questionInput.value.trim() : '',
-    attachments: AppState.assistantAttachments
-  };
+  const request = getCurrentAssistantRequest(overrideRequest?.question);
 
   if (!request.question) {
+    const questionInput = $('aiQuestion');
     if (questionInput) {
       questionInput.focus();
     }
@@ -854,10 +874,7 @@ async function submitAssistantQuestion(overrideRequest) {
     askButton.disabled = true;
   }
 
-  AppState.lastAssistantRequest = {
-    question: request.question,
-    attachments: (request.attachments || []).map((attachment) => ({ ...attachment }))
-  };
+  AppState.lastAssistantRequest = { question: request.question };
 
   try {
     const provider = getAIProvider();
@@ -1026,8 +1043,12 @@ function attachAIAssistantHandlers() {
 
   if (retryBtn) {
     retryBtn.addEventListener('click', () => {
-      if (AppState.lastAssistantRequest) {
-        submitAssistantQuestion(AppState.lastAssistantRequest);
+      const lastQuestion = AppState.lastAssistantRequest?.question;
+      if (lastQuestion) {
+        if (questionInput) {
+          questionInput.value = lastQuestion;
+        }
+        submitAssistantQuestion({ question: lastQuestion });
       } else {
         showAssistantError('There is no previous LifePilot request to retry yet.');
       }
