@@ -530,12 +530,15 @@ async function handleAssistantFiles(fileList) {
     try {
       const dataUrl = await readFileAsDataURL(file);
       const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const previewUrl = isImageAttachment(file.type) && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+        ? URL.createObjectURL(file)
+        : (isImageAttachment(file.type) ? dataUrl : '');
       AssistantState.attachments.push({
         name: file.name,
         type: file.type,
         size: file.size,
         base64,
-        previewUrl: isImageAttachment(file.type) ? dataUrl : ''
+        previewUrl
       });
       existingKeys.add(fileKey);
       runningTotal += file.size;
@@ -554,6 +557,10 @@ async function handleAssistantFiles(fileList) {
 }
 
 function removeAssistantAttachment(index) {
+  const attachment = AssistantState.attachments[index];
+  if (attachment?.previewUrl?.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+    URL.revokeObjectURL(attachment.previewUrl);
+  }
   AssistantState.attachments = AssistantState.attachments.filter((_, itemIndex) => itemIndex !== index);
   renderAssistantAttachments();
 }
@@ -943,8 +950,19 @@ async function askAssistant() {
       }
 
       if (!apiResponse.ok) {
-        const errorPayload = await apiResponse.json().catch(() => ({}));
-        throw new Error(errorPayload.error || 'LifePilot could not process that request.');
+        const errorText = await apiResponse.text();
+        let errorMessage = `LifePilot could not process that request (${apiResponse.status}).`;
+
+        if (errorText) {
+          try {
+            const errorPayload = JSON.parse(errorText);
+            errorMessage = errorPayload.error || errorMessage;
+          } catch {
+            errorMessage = errorText;
+          }
+        }
+
+        throw new Error(errorMessage);
       }
 
       response = await apiResponse.json();

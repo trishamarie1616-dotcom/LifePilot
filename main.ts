@@ -72,6 +72,21 @@ function sanitizeAttachmentName(name: string): string {
   return sanitized || 'attachment';
 }
 
+function decodeBase64Attachment(base64: string): Uint8Array | null {
+  const normalized = base64.replace(/\s+/g, '');
+
+  if (!normalized || normalized.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(normalized)) {
+    return null;
+  }
+
+  const decoded = Buffer.from(normalized, 'base64');
+  if (decoded.toString('base64') !== normalized) {
+    return null;
+  }
+
+  return Uint8Array.from(decoded);
+}
+
 function hasBedrockConfiguration(): boolean {
   return Boolean(process.env.AWS_REGION && process.env.BEDROCK_MODEL_ID);
 }
@@ -89,7 +104,13 @@ function prepareAttachments(attachments: AskRequest['attachments']): { attachmen
       };
     }
 
-    const bytes = Uint8Array.from(Buffer.from(attachment.base64, 'base64'));
+    const bytes = decodeBase64Attachment(attachment.base64);
+    if (!bytes) {
+      return {
+        attachments: [],
+        error: `${attachment.name} contained invalid file data. Please re-upload the file and try again.`
+      };
+    }
 
     if (bytes.byteLength > MAX_ATTACHMENT_SIZE) {
       return {
