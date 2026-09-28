@@ -18,7 +18,11 @@ function parseStoredJSON(key, fallback) {
 const AppState = {
   plans: parseStoredJSON('lifepilot-plans', []),
   tasks: parseStoredJSON('lifepilot-planner-tasks', []),
-  currentPlan: null
+  currentPlan: null,
+  askAttachments: [],
+  askLastResponse: null,
+  askResponseToken: 0,
+  askLastImportedToken: null
 };
 
 const PRIORITY_RANK = {
@@ -26,6 +30,16 @@ const PRIORITY_RANK = {
   medium: 1,
   low: 2
 };
+
+const ASK_ALLOWED_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+]);
+
+const ASK_MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 const $ = (id) => document.getElementById(id);
 const input = $('userInput');
@@ -366,6 +380,144 @@ function escapeHTML(value) {
   }[char]));
 }
 
+function getApiBaseUrl() {
+  const configured = document.querySelector('meta[name="lifepilot-api-base"]')?.getAttribute('content') || '';
+  return configured.trim();
+}
+
+function setAskLoadingState(isLoading) {
+  const askSubmitBtn = $('askSubmitBtn');
+  const addAttachmentBtn = $('addAttachmentBtn');
+  if (askSubmitBtn) {
+    askSubmitBtn.disabled = isLoading;
+    askSubmitBtn.textContent = isLoading ? 'Thinking…' : 'Ask LifePilot';
+  }
+  if (addAttachmentBtn) {
+    addAttachmentBtn.disabled = isLoading;
+  }
+}
+
+function setAskError(message) {
+  const errorEl = $('askErrorMessage');
+  if (!errorEl) return;
+  if (!message) {
+    errorEl.style.display = 'none';
+    errorEl.textContent = '';
+    return;
+  }
+  errorEl.textContent = message;
+  errorEl.style.display = 'block';
+}
+
+function formatFileSize(size) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function inferMimeTypeFromFileName(fileName) {
+  const lower = String(fileName || '').toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return '';
+}
+
+function getNormalizedFileType(file) {
+  return String(file.type || '').toLowerCase() || inferMimeTypeFromFileName(file.name);
+}
+
+function renderAttachmentPreviews() {
+  const list = $('attachmentPreviewList');
+  if (!list) return;
+
+  if (!AppState.askAttachments.length) {
+    list.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = AppState.askAttachments
+    .map((attachment, index) => `
+      <div class="attachment-preview-item">
+        <div class="attachment-preview-meta">
+          <p class="attachment-preview-name">${escapeHTML(attachment.name)}</p>
+          <p class="attachment-preview-size">${escapeHTML(formatFileSize(attachment.size))}</p>
+        </div>
+        <button class="attachment-remove-btn" type="button" data-attachment-action="remove" data-attachment-index="${index}">Remove</button>
+      </div>
+    `)
+    .join('');
+}
+
+function renderAskResponse(result) {
+  const container = $('askResponseContainer');
+  if (!container) return;
+
+  const badge = $('askModeBadge');
+  if (badge) {
+    const isAi = result.mode === 'ai';
+    badge.classList.toggle('ask-mode-ai', isAi);
+    badge.classList.toggle('ask-mode-demo', !isAi);
+    badge.textContent = result.badgeLabel || (isAi ? '✓ AI-Powered' : 'Demo Mode');
+  }
+
+  const directAnswerEl = $('askDirectAnswer');
+  if (directAnswerEl) {
+    directAnswerEl.textContent = result.response.directAnswer || '';
+  }
+
+  const explanationEl = $('askExplanation');
+  if (explanationEl) {
+    explanationEl.textContent = result.response.explanation || '';
+  }
+
+  const uncertaintiesEl = $('askUncertainties');
+  const uncertaintiesSection = $('askUncertaintiesSection');
+  const uncertainties = result.response.uncertainties || [];
+  if (uncertaintiesEl) {
+    uncertaintiesEl.innerHTML = uncertainties
+      .map((item) => `<li>${escapeHTML(item)}</li>`)
+      .join('');
+  }
+  if (uncertaintiesSection) {
+    uncertaintiesSection.style.display = uncertainties.length ? 'block' : 'none';
+  }
+
+  const actionsEl = $('askRecommendedActions');
+  if (actionsEl) {
+    actionsEl.innerHTML = (result.response.recommendedActions || [])
+      .map((item) => `<li>${escapeHTML(item)}</li>`)
+      .join('');
+  }
+
+  const followups = result.response.followUpQuestions || [];
+  const followupsSection = $('askFollowupsSection');
+  const followupsEl = $('askFollowups');
+  if (followupsEl) {
+    followupsEl.innerHTML = followups.map((item) => `<li>${escapeHTML(item)}</li>`).join('');
+  }
+  if (followupsSection) {
+    followupsSection.style.display = followups.length ? 'block' : 'none';
+  }
+
+  container.style.display = 'block';
+}
+
 function generatePlanFromRequest() {
   const request = input.value.trim();
   if (!request) {
@@ -553,6 +705,152 @@ function deleteTask(taskId) {
   renderPlannerTasks();
 }
 
+async function attachFilesToAsk(files) {
+  const picked = Array.from(files || []);
+  if (!picked.length) return;
+
+  const errors = [];
+  const validFiles = picked.filter((file) => {
+    const normalizedType = getNormalizedFileType(file);
+    if (!ASK_ALLOWED_TYPES.has(normalizedType)) {
+      errors.push(`${file.name}: unsupported file type`);
+      return false;
+    }
+    if (file.size > ASK_MAX_FILE_SIZE_BYTES) {
+      errors.push(`${file.name}: exceeds 10MB`);
+      return false;
+    }
+    return true;
+  });
+
+  if (errors.length) {
+    setAskError(errors.join(' • '));
+  } else {
+    setAskError('');
+  }
+
+  if (!validFiles.length) return;
+
+  try {
+    const encoded = await Promise.all(
+      validFiles.map(async (file) => ({
+        name: file.name,
+        type: getNormalizedFileType(file),
+        size: file.size,
+        base64: await readFileAsBase64(file)
+      }))
+    );
+
+    AppState.askAttachments.push(...encoded);
+    renderAttachmentPreviews();
+  } catch (error) {
+    console.error('Attachment read error:', error);
+    setAskError('One or more attachments could not be read. Please try again.');
+  }
+}
+
+async function submitAskLifePilot() {
+  const inputEl = $('askQuestionInput');
+  if (!inputEl) return;
+
+  const question = inputEl.value.trim();
+  if (!question) {
+    inputEl.focus();
+    setAskError('Please enter a question for Ask LifePilot.');
+    return;
+  }
+
+  setAskError('');
+  setAskLoadingState(true);
+
+  const apiBase = getApiBaseUrl();
+  const endpoint = `${apiBase}/api/ask`;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        question,
+        attachments: AppState.askAttachments
+      })
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    const payload = contentType.includes('application/json')
+      ? await response.json().catch(() => null)
+      : null;
+    if (!response.ok) {
+      const message = payload?.message || 'Ask LifePilot failed. Please retry.';
+      throw new Error(message);
+    }
+
+    if (!payload || !payload.response) {
+      throw new Error('AI backend returned an empty response.');
+    }
+
+    AppState.askLastResponse = payload;
+    AppState.askResponseToken += 1;
+    AppState.askLastImportedToken = null;
+    renderAskResponse(payload);
+  } catch (error) {
+    console.error('Ask request failed:', error);
+    if (error instanceof TypeError) {
+      setAskError('Unable to reach AI backend right now. Please retry after checking your backend connection.');
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : 'Ask LifePilot failed. Please retry.';
+    setAskError(message);
+  } finally {
+    setAskLoadingState(false);
+  }
+}
+
+function addRecommendedActionsToPlanner() {
+  const actions = (AppState.askLastResponse?.response?.recommendedActions || [])
+    .map((action) => String(action || '').trim())
+    .filter(Boolean);
+  if (!actions.length) {
+    setAskError('No recommended actions found to add.');
+    return;
+  }
+
+  if (AppState.askLastImportedToken === AppState.askResponseToken) {
+    setAskError('These actions were already added to your planner for this response.');
+    return;
+  }
+
+  const existingTitles = new Set(
+    AppState.tasks.map((task) => String(task.title || '').trim().toLowerCase()).filter(Boolean)
+  );
+  const actionsToAdd = actions.filter((action) => !existingTitles.has(action.toLowerCase()));
+  if (!actionsToAdd.length) {
+    setAskError('All recommended actions are already in your planner.');
+    return;
+  }
+
+  const now = Date.now();
+  actionsToAdd.forEach((action, index) => {
+    AppState.tasks.push({
+      id: `${now}-${index}`,
+      title: String(action).trim(),
+      priority: 'medium',
+      dueDate: '',
+      completed: false,
+      createdAt: now + index
+    });
+  });
+
+  AppState.askLastImportedToken = AppState.askResponseToken;
+  setAskError('');
+  saveTasks();
+  renderPlannerTasks();
+  switchTab('planner');
+}
+
 function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach((section) => {
     section.classList.toggle('tab-content-active', section.id === `${tabName}-tab`);
@@ -619,9 +917,60 @@ function attachTabNavigationHandlers() {
   });
 }
 
+function attachAskEventHandlers() {
+  const addAttachmentBtn = $('addAttachmentBtn');
+  const attachmentInput = $('askAttachmentInput');
+  const askSubmitBtn = $('askSubmitBtn');
+  const askInput = $('askQuestionInput');
+  const attachmentPreviewList = $('attachmentPreviewList');
+  const addActionsBtn = $('addActionsToPlannerBtn');
+
+  if (addAttachmentBtn && attachmentInput) {
+    addAttachmentBtn.addEventListener('click', () => {
+      attachmentInput.click();
+    });
+  }
+
+  if (attachmentInput) {
+    attachmentInput.addEventListener('change', async () => {
+      await attachFilesToAsk(attachmentInput.files);
+      attachmentInput.value = '';
+    });
+  }
+
+  if (attachmentPreviewList) {
+    attachmentPreviewList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-attachment-action="remove"]');
+      if (!button) return;
+      const index = Number(button.dataset.attachmentIndex);
+      if (Number.isNaN(index) || index < 0 || index >= AppState.askAttachments.length) return;
+      AppState.askAttachments.splice(index, 1);
+      renderAttachmentPreviews();
+    });
+  }
+
+  if (askSubmitBtn) {
+    askSubmitBtn.addEventListener('click', submitAskLifePilot);
+  }
+
+  if (askInput) {
+    askInput.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        submitAskLifePilot();
+      }
+    });
+  }
+
+  if (addActionsBtn) {
+    addActionsBtn.addEventListener('click', addRecommendedActionsToPlanner);
+  }
+}
+
 function attachEventHandlers() {
   attachPlannerEventHandlers();
   attachTabNavigationHandlers();
+  attachAskEventHandlers();
 
   const submitBtn = $('submitBtn');
   if (submitBtn) {

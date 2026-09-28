@@ -6,7 +6,7 @@
 
 LifePilot consists of three integrated components:
 
-1. **Standalone Web App** – A static GitHub Pages application with localStorage
+1. **Standalone Web App** – A static dashboard app with localStorage
 2. **MCP Server** – Exposes LifePilot planning as an MCP tool with Streamable HTTP support
 3. **MCP App UI** – An interactive UI resource that renders plans in MCP-compatible hosts
 
@@ -27,6 +27,8 @@ The original LifePilot application runs as a static web app on GitHub Pages. No 
 - Travel planning
 - General goal breakdown
 - Plan persistence via localStorage
+- My Planner task management with priority, due dates, completion, and deletion
+- Ask LifePilot tab with attachment upload previews (JPG/PNG/WEBP/PDF/DOCX, 10MB max)
 
 **Files:**
 - `index.html` – Main page (GitHub Pages compatible)
@@ -52,6 +54,7 @@ The server exposes the planning engine via the **Model Context Protocol** using 
 - Text fallback for non-UI clients
 - Structured content for MCP App UI rendering
 - CORS-enabled (safe for cross-origin integration)
+- Ask API endpoint (`POST /api/ask`) with secure backend boundary and demo mode fallback
 
 ### MCP App UI
 
@@ -96,6 +99,9 @@ npm run mcp:start
 ```
 
 Starts the server on `http://localhost:3001/mcp` using Streamable HTTP transport. This is the recommended mode for MCP hosts.
+
+The same server also exposes:
+- `POST /api/ask` for Ask LifePilot responses
 
 **Custom port:**
 ```bash
@@ -217,10 +223,13 @@ The MCP App UI communicates with the MCP host via:
 ✅ CORS support
 ✅ TypeScript compilation
 ✅ Vite bundling (UI as single HTML file)
+✅ Ask LifePilot UI with structured response sections and Add-to-Planner integration
+✅ Attachment validation + base64 encoding before backend submission
+✅ Backend AI service boundary (`ai-service.ts`) with clearly labeled demo mode fallback
 
 ## What's NOT Implemented Yet
 
-❌ AWS Bedrock integration (for AI backend)
+❌ Direct Amazon Bedrock runtime invocation (service hook exists, credentials/model wiring still required)
 ❌ Alexa+ skill (standalone)
 ❌ Persistent database for saved plans (MCP version)
 ❌ Real AI model calls (still using rule-based mock planner)
@@ -253,6 +262,8 @@ LifePilot/
 ├── styles.css                # Styling
 ├── server.ts                 # MCP server (tool + resource registration)
 ├── main.ts                   # Server entry point (Streamable HTTP + stdio)
+├── api.ts                    # Shared Ask API request/response schema + validation
+├── ai-service.ts             # AI service layer (demo mode + Bedrock-ready boundary)
 ├── mcp-app.html              # MCP App UI (HTML template)
 ├── mcp-app.ts                # MCP App client-side (PostMessageTransport)
 ├── package.json              # Dependencies + build scripts
@@ -337,3 +348,17 @@ MIT
 **Built for the Amazon Alexa+ Hackathon**
 
 LifePilot demonstrates MCP Apps integration with Streamable HTTP transport, providing a portable planning engine across multiple platforms.
+## Environment Configuration
+
+For backend/runtime:
+
+```bash
+PORT=3001
+LIFEPILOT_DEMO_MODE=true
+AWS_REGION=us-east-1
+BEDROCK_MODEL_ID=
+```
+
+- `LIFEPILOT_DEMO_MODE=true` keeps responses in clearly labeled demo mode.
+- Set `LIFEPILOT_DEMO_MODE=false` and provide AWS values to enable Bedrock wiring work in `ai-service.ts`.
+- In `index.html`, set `<meta name="lifepilot-api-base" content="http://localhost:3001">` when frontend and backend run on different origins.

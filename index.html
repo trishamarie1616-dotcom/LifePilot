@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" content="LifePilot - AI-powered personal action assistant that turns requests into actionable plans">
+    <meta name="lifepilot-api-base" content="">
     <title>LifePilot - Life Management Dashboard</title>
     <link rel="stylesheet" href="styles.css">
 </head>
@@ -161,14 +162,76 @@
                 </div>
             </section>
 
-            <!-- AI Assistant Tab (Placeholder) -->
-            <section id="assistant-tab" class="tab-content">
+            <!-- Daily Hacks Tab (Placeholder) -->
+            <section id="hacks-tab" class="tab-content">
                 <div class="placeholder-section">
-                    <div class="placeholder-icon">🤖</div>
-                    <h2>AI Assistant</h2>
-                    <p class="placeholder-text">Chat with your personal AI assistant.</p>
+                    <div class="placeholder-icon">💡</div>
+                    <h2>Daily Proactive Hacks</h2>
+                    <p class="placeholder-text">Personalized habits, nudges, and productivity boosts.</p>
                     <p class="coming-soon">🚀 Coming Soon</p>
-                    <button class="btn btn-secondary">Start Chat</button>
+                    <button class="btn btn-secondary" type="button" disabled aria-disabled="true">View Daily Hacks (Soon)</button>
+                </div>
+            </section>
+
+            <!-- Ask LifePilot Tab -->
+            <section id="assistant-tab" class="tab-content">
+                <div class="ask-section">
+                    <div class="section-header ask-header">
+                        <h3>Ask LifePilot</h3>
+                        <span id="askModeBadge" class="ask-mode-badge ask-mode-demo" aria-live="polite">Demo Mode</span>
+                    </div>
+                    <p class="ask-subtitle">Ask a question first. LifePilot answers directly, then suggests actions.</p>
+
+                    <div class="plan-input-group">
+                        <textarea
+                            id="askQuestionInput"
+                            class="plan-input"
+                            placeholder="Ask anything about your uploaded files, goals, planning, or next steps..."
+                            rows="4"
+                            maxlength="1200"
+                        ></textarea>
+                    </div>
+
+                    <div class="ask-actions-row">
+                        <input
+                            id="askAttachmentInput"
+                            type="file"
+                            accept=".jpg,.jpeg,.png,.pdf,.docx,.webp,image/jpeg,image/png,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                            multiple
+                            hidden
+                        />
+                        <button id="addAttachmentBtn" class="btn btn-secondary" type="button">📎 Add Attachment</button>
+                        <button id="askSubmitBtn" class="btn btn-primary" type="button">Ask LifePilot</button>
+                    </div>
+                    <p class="ask-helptext">Supported: JPG, PNG, WEBP, PDF, DOCX (10MB max each).</p>
+
+                    <div id="attachmentPreviewList" class="attachment-preview-list"></div>
+
+                    <div id="askErrorMessage" class="ask-error" style="display: none;"></div>
+
+                    <div id="askResponseContainer" class="ask-response" style="display: none;">
+                        <section class="plan-section">
+                            <h4 class="section-title">💬 Direct Answer</h4>
+                            <p id="askDirectAnswer"></p>
+                        </section>
+                        <section class="plan-section">
+                            <h4 class="section-title">🧠 Explanation</h4>
+                            <p id="askExplanation"></p>
+                        </section>
+                        <section id="askUncertaintiesSection" class="plan-section">
+                            <h4 class="section-title">⚠️ Uncertainties</h4>
+                            <ul id="askUncertainties" class="followups-list"></ul>
+                        </section>
+                        <section class="plan-section">
+                            <h4 class="section-title">✅ Recommended Actions</h4>
+                            <ol id="askRecommendedActions" class="steps-list"></ol>
+                            <button id="addActionsToPlannerBtn" class="btn btn-primary btn-full" type="button">Add to My Planner</button>
+                        </section>
+                        <section id="askFollowupsSection" class="plan-section" style="display: none;">
+                            <h4 class="section-title">❓ Follow-up Questions</h4>
+                            <ul id="askFollowups" class="followups-list"></ul>
+                        </section>
+                    </div>
                 </div>
             </section>
         </main>
@@ -187,9 +250,13 @@
                 <span class="nav-icon">🎯</span>
                 <span class="nav-label">Goals</span>
             </button>
+            <button class="nav-btn" data-tab="hacks" aria-label="Daily Hacks">
+                <span class="nav-icon">💡</span>
+                <span class="nav-label">Hacks</span>
+            </button>
             <button class="nav-btn" data-tab="assistant" aria-label="AI Assistant">
                 <span class="nav-icon">🤖</span>
-                <span class="nav-label">AI</span>
+                <span class="nav-label">Ask</span>
             </button>
         </nav>
 

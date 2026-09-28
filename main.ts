@@ -16,7 +16,10 @@ import { createMcpExpressApp } from '@modelcontextprotocol/express';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import cors from 'cors';
+import express from 'express';
 import type { Request, Response } from 'express';
+import { createAIService } from './ai-service.js';
+import { normalizeAskRequest } from './api.js';
 import { createServer } from './server.js';
 
 /**
@@ -25,9 +28,35 @@ import { createServer } from './server.js';
  */
 async function startStreamableHTTPServer(createServerFn: () => McpServer): Promise<void> {
   const port = parseInt(process.env.PORT ?? '3001', 10);
+  const aiService = createAIService();
 
   const app = createMcpExpressApp({ host: '0.0.0.0' });
+  app.use(express.json({ limit: '20mb' }));
   app.use(cors());
+
+  app.post('/api/ask', async (req: Request, res: Response) => {
+    let askRequest;
+
+    try {
+      askRequest = normalizeAskRequest(req.body);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({
+        message
+      });
+      return;
+    }
+
+    try {
+      const result = await aiService.answer(askRequest);
+      res.json(result);
+    } catch (error) {
+      console.error('AI service failed:', error);
+      res.status(500).json({
+        message: 'AI service failed. Please try again.'
+      });
+    }
+  });
 
   // MCP endpoint: POST /mcp
   app.all('/mcp', async (req: Request, res: Response) => {
