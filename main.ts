@@ -54,7 +54,7 @@ const askRequestSchema = z.object({
 type AskRequest = z.infer<typeof askRequestSchema>;
 type SupportedAttachmentType = NonNullable<ReturnType<typeof SUPPORTED_ATTACHMENT_TYPES.get>>;
 type PreparedAttachment = AskRequest['attachments'][number] & {
-  bytes: Uint8Array<ArrayBuffer>;
+  bytes: Uint8Array;
   supportedType: SupportedAttachmentType;
 };
 
