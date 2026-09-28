@@ -756,10 +756,17 @@ async function submitAskLifePilot() {
       })
     });
 
-    const payload = await response.json().catch(() => null);
+    const contentType = response.headers.get('content-type') || '';
+    const payload = contentType.includes('application/json')
+      ? await response.json().catch(() => null)
+      : null;
     if (!response.ok) {
       const message = payload?.message || 'Ask LifePilot failed. Please retry.';
       throw new Error(message);
+    }
+
+    if (!payload || !payload.response) {
+      throw new Error('AI backend returned an empty response.');
     }
 
     AppState.askLastResponse = payload;
@@ -774,7 +781,9 @@ async function submitAskLifePilot() {
 }
 
 function addRecommendedActionsToPlanner() {
-  const actions = AppState.askLastResponse?.response?.recommendedActions || [];
+  const actions = (AppState.askLastResponse?.response?.recommendedActions || [])
+    .map((action) => String(action || '').trim())
+    .filter(Boolean);
   if (!actions.length) {
     setAskError('No recommended actions found to add.');
     return;
@@ -889,7 +898,7 @@ function attachAskEventHandlers() {
       const button = event.target.closest('[data-attachment-action="remove"]');
       if (!button) return;
       const index = Number(button.dataset.attachmentIndex);
-      if (Number.isNaN(index) || index < 0) return;
+      if (Number.isNaN(index) || index < 0 || index >= AppState.askAttachments.length) return;
       AppState.askAttachments.splice(index, 1);
       renderAttachmentPreviews();
     });
