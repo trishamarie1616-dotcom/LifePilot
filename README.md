@@ -102,7 +102,6 @@ Starts the server on `http://localhost:3001/mcp` using Streamable HTTP transport
 
 The same server also exposes:
 - `POST /api/ask` for Ask LifePilot responses
-- `GET /api/config` for frontend API base configuration
 
 **Custom port:**
 ```bash
@@ -358,7 +357,6 @@ PORT=3001
 LIFEPILOT_DEMO_MODE=true
 AWS_REGION=us-east-1
 BEDROCK_MODEL_ID=
-LIFEPILOT_API_BASE_URL=
 ```
 
 - `LIFEPILOT_DEMO_MODE=true` keeps responses in clearly labeled demo mode.

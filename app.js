@@ -426,6 +426,20 @@ function readFileAsBase64(file) {
   });
 }
 
+function inferMimeTypeFromFileName(fileName) {
+  const lower = String(fileName || '').toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.docx')) return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  return '';
+}
+
+function getNormalizedFileType(file) {
+  return String(file.type || '').toLowerCase() || inferMimeTypeFromFileName(file.name);
+}
+
 function renderAttachmentPreviews() {
   const list = $('attachmentPreviewList');
   if (!list) return;
@@ -471,10 +485,15 @@ function renderAskResponse(result) {
   }
 
   const uncertaintiesEl = $('askUncertainties');
+  const uncertaintiesSection = $('askUncertaintiesSection');
+  const uncertainties = result.response.uncertainties || [];
   if (uncertaintiesEl) {
-    uncertaintiesEl.innerHTML = (result.response.uncertainties || [])
+    uncertaintiesEl.innerHTML = uncertainties
       .map((item) => `<li>${escapeHTML(item)}</li>`)
       .join('');
+  }
+  if (uncertaintiesSection) {
+    uncertaintiesSection.style.display = uncertainties.length ? 'block' : 'none';
   }
 
   const actionsEl = $('askRecommendedActions');
@@ -690,7 +709,8 @@ async function attachFilesToAsk(files) {
 
   const errors = [];
   const validFiles = picked.filter((file) => {
-    if (!ASK_ALLOWED_TYPES.has((file.type || '').toLowerCase())) {
+    const normalizedType = getNormalizedFileType(file);
+    if (!ASK_ALLOWED_TYPES.has(normalizedType)) {
       errors.push(`${file.name}: unsupported file type`);
       return false;
     }
@@ -713,7 +733,7 @@ async function attachFilesToAsk(files) {
     const encoded = await Promise.all(
       validFiles.map(async (file) => ({
         name: file.name,
-        type: (file.type || '').toLowerCase(),
+        type: getNormalizedFileType(file),
         size: file.size,
         base64: await readFileAsBase64(file)
       }))

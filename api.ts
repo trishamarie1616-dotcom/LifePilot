@@ -38,10 +38,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function getFrontendApiBaseFromEnv(): string {
-  return process.env.LIFEPILOT_API_BASE_URL?.trim() ?? '';
-}
-
 export function normalizeAskRequest(payload: unknown): AskRequest {
   if (!isRecord(payload)) {
     throw new Error('Request body must be a JSON object.');
