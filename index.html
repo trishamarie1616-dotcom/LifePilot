@@ -161,14 +161,110 @@
                 </div>
             </section>
 
-            <!-- AI Assistant Tab (Placeholder) -->
+            <!-- AI Assistant Tab -->
             <section id="assistant-tab" class="tab-content">
-                <div class="placeholder-section">
-                    <div class="placeholder-icon">🤖</div>
-                    <h2>AI Assistant</h2>
-                    <p class="placeholder-text">Chat with your personal AI assistant.</p>
-                    <p class="coming-soon">🚀 Coming Soon</p>
-                    <button class="btn btn-secondary">Start Chat</button>
+                <div class="ask-lifepilot-section">
+                    <div class="section-header">
+                        <h2>Ask LifePilot</h2>
+                        <span id="aiModeBadge" class="ai-badge demo-badge">🔄 Demo Mode</span>
+                    </div>
+                    <p class="section-description">Ask a question, upload a photo or document, and get detailed, accurate answers with recommended actions.</p>
+
+                    <!-- Question Input -->
+                    <div class="ai-question-input">
+                        <textarea 
+                            id="aiQuestion" 
+                            class="ai-textarea" 
+                            placeholder="Ask me anything... or upload a photo/document for analysis"
+                            rows="3"
+                            maxlength="1000"
+                        ></textarea>
+                    </div>
+
+                    <!-- File Attachments -->
+                    <div class="ai-attachments-section">
+                        <div class="attachment-controls">
+                            <label for="fileUpload" class="file-upload-btn">
+                                <span>📎 Add Photo or Document</span>
+                                <input 
+                                    type="file" 
+                                    id="fileUpload" 
+                                    accept=".jpg,.jpeg,.png,.pdf,.docx,.webp"
+                                    multiple
+                                    style="display: none;"
+                                />
+                            </label>
+                            <p class="file-help-text">Supported: JPG, PNG, PDF, DOCX, WebP (Max 10MB per file)</p>
+                        </div>
+
+                        <!-- Attachment Previews -->
+                        <div id="attachmentPreviews" class="attachment-previews" style="display: none;">
+                            <div class="attachments-header">
+                                <h4>Attachments</h4>
+                                <button id="clearAllAttachments" class="btn-small">Clear All</button>
+                            </div>
+                            <div id="previewsList" class="previews-list"></div>
+                        </div>
+                    </div>
+
+                    <!-- Send Button -->
+                    <button id="askLifePilotBtn" class="btn btn-primary btn-full">Send Question →</button>
+
+                    <!-- AI Response Display -->
+                    <div id="aiResponseContainer" class="ai-response-container" style="display: none;">
+                        <div class="ai-response-card">
+                            <button class="close-btn" id="closeResponseBtn">✕</button>
+
+                            <!-- Direct Answer Section -->
+                            <div class="ai-response-section">
+                                <h3 class="response-title">💡 Answer</h3>
+                                <p id="aiAnswer" class="response-content"></p>
+                            </div>
+
+                            <!-- Explanation Section -->
+                            <div class="ai-response-section" id="explanationSection" style="display: none;">
+                                <h3 class="response-title">📚 Explanation</h3>
+                                <p id="aiExplanation" class="response-content"></p>
+                            </div>
+
+                            <!-- Uncertainties Section -->
+                            <div class="ai-response-section" id="uncertaintiesSection" style="display: none;">
+                                <h3 class="response-title">❓ Uncertainties</h3>
+                                <ul id="aiUncertainties" class="response-list"></ul>
+                            </div>
+
+                            <!-- Recommended Actions Section -->
+                            <div class="ai-response-section" id="actionsSection" style="display: none;">
+                                <h3 class="response-title">🎯 Recommended Actions</h3>
+                                <ol id="aiActions" class="response-list"></ol>
+                                <button id="addActionsBtn" class="btn btn-teal">+ Add Actions to My Planner</button>
+                            </div>
+
+                            <!-- Follow-up Questions Section -->
+                            <div class="ai-response-section" id="followupsSection" style="display: none;">
+                                <h3 class="response-title">❔ Follow-up Questions</h3>
+                                <ul id="aiFollowups" class="response-list"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Loading State -->
+                    <div id="aiLoadingOverlay" class="ai-loading-overlay" style="display: none;">
+                        <div class="loading-spinner">
+                            <div class="spinner"></div>
+                            <p>Analyzing your question...</p>
+                        </div>
+                    </div>
+
+                    <!-- Error State -->
+                    <div id="aiErrorContainer" class="ai-error-container" style="display: none;">
+                        <div class="error-card">
+                            <button class="close-btn" id="closeErrorBtn">✕</button>
+                            <h3>⚠️ Error</h3>
+                            <p id="errorMessage"></p>
+                            <button id="retryBtn" class="btn btn-primary">Retry</button>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
