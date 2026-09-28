@@ -46,6 +46,7 @@ const SUPPORTED_ATTACHMENT_TYPES = {
 };
 
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024;
 const URGENT_KEYWORDS = /\b(urgent|immediately|asap|today|now|deadline|overdue|critical)\b/i;
 const THIS_WEEK_KEYWORDS = /\b(this week|within a week|soon|next step)\b/i;
 
@@ -464,6 +465,12 @@ function validateAttachment(file) {
   return '';
 }
 
+function getTotalAttachmentSize(nextFiles = []) {
+  const existingSize = AssistantState.attachments.reduce((total, attachment) => total + attachment.size, 0);
+  const nextSize = nextFiles.reduce((total, file) => total + file.size, 0);
+  return existingSize + nextSize;
+}
+
 function readFileAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -503,6 +510,11 @@ async function handleAssistantFiles(fileList) {
   if (!files.length) return;
 
   clearAssistantFeedback();
+
+  if (getTotalAttachmentSize(files) > MAX_TOTAL_ATTACHMENT_SIZE) {
+    setAssistantFeedback('assistantError', 'Attachments exceed the 20MB total limit. Remove a file or choose smaller uploads.');
+    return;
+  }
 
   for (const file of files) {
     const validationError = validateAttachment(file);
@@ -896,21 +908,33 @@ async function askAssistant() {
 
     try {
       const apiUrl = new URL('/api/ask', window.location.href).toString();
-      const apiResponse = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          question,
-          attachments: AssistantState.attachments.map(({ name, type, size, base64 }) => ({
-            name,
-            type,
-            size,
-            base64
-          }))
-        })
-      });
+      let apiResponse;
+
+      try {
+        apiResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            question,
+            attachments: AssistantState.attachments.map(({ name, type, size, base64 }) => ({
+              name,
+              type,
+              size,
+              base64
+            }))
+          })
+        });
+      } catch (error) {
+        console.warn('Assistant API unavailable, using demo mode:', error);
+        response = buildClientDemoResponse(question, AssistantState.attachments);
+      }
+
+      if (!apiResponse) {
+        renderAssistantResponse(response);
+        return;
+      }
 
       if (!apiResponse.ok) {
         const errorPayload = await apiResponse.json().catch(() => ({}));
@@ -919,14 +943,12 @@ async function askAssistant() {
 
       response = await apiResponse.json();
     } catch (error) {
-      console.warn('Assistant API unavailable, using demo mode:', error);
-      response = buildClientDemoResponse(question, AssistantState.attachments);
+      console.error('Assistant request failed:', error);
+      setAssistantFeedback('assistantError', error instanceof Error ? error.message : 'Something went wrong. Please try again.');
+      return;
     }
 
     renderAssistantResponse(response);
-  } catch (error) {
-    console.error('Assistant request failed:', error);
-    setAssistantFeedback('assistantError', error instanceof Error ? error.message : 'Something went wrong. Please try again.');
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Ask LifePilot';

@@ -26,6 +26,7 @@ import { createServer } from './server.js';
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.basename(CURRENT_DIR) === 'dist' ? path.resolve(CURRENT_DIR, '..') : CURRENT_DIR;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024;
 const STANDALONE_ASSET_PATHS = new Map([
   ['/', 'index.html'],
   ['/index.html', 'index.html'],
@@ -77,6 +78,7 @@ function hasBedrockConfiguration(): boolean {
 
 function prepareAttachments(attachments: AskRequest['attachments']): { attachments: PreparedAttachment[]; error?: string } {
   const preparedAttachments: PreparedAttachment[] = [];
+  let totalSize = 0;
 
   for (const attachment of attachments) {
     const supportedType = SUPPORTED_ATTACHMENT_TYPES.get(attachment.type);
@@ -100,6 +102,14 @@ function prepareAttachments(attachments: AskRequest['attachments']): { attachmen
       return {
         attachments: [],
         error: `${attachment.name} could not be verified because the uploaded file size did not match the payload.`
+      };
+    }
+
+    totalSize += bytes.byteLength;
+    if (totalSize > MAX_TOTAL_ATTACHMENT_SIZE) {
+      return {
+        attachments: [],
+        error: 'Attachments exceed the 20MB total limit.'
       };
     }
 
@@ -260,8 +270,9 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
 
   const app = createMcpExpressApp({ host: '0.0.0.0' });
   app.use(cors());
+  app.use(express.json({ limit: '80mb' }));
 
-  app.post('/api/ask', express.json({ limit: '30mb' }), async (req: Request, res: Response) => {
+  app.post('/api/ask', async (req: Request, res: Response) => {
     const parsed = askRequestSchema.safeParse(req.body);
 
     if (!parsed.success) {
@@ -313,6 +324,20 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
       res.sendFile(path.join(APP_ROOT, fileName));
     });
   }
+
+  app.use((error: Error & { type?: string }, req: Request, res: Response, next: (error?: Error) => void) => {
+    if (error.type === 'entity.too.large') {
+      const message = 'Attachments exceed the maximum supported upload size.';
+      if (req.path.startsWith('/api/')) {
+        res.status(413).json({ error: message });
+      } else {
+        res.status(413).send(message);
+      }
+      return;
+    }
+
+    next(error);
+  });
 
   const httpServer = app.listen(port, (err) => {
     if (err) {
