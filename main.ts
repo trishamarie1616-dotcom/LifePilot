@@ -270,7 +270,7 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
 
   const app = createMcpExpressApp({ host: '0.0.0.0' });
   app.use(cors());
-  app.use(express.json({ limit: '80mb' }));
+  app.use(express.json({ limit: '32mb' }));
 
   app.post('/api/ask', async (req: Request, res: Response) => {
     const parsed = askRequestSchema.safeParse(req.body);

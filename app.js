@@ -465,12 +465,6 @@ function validateAttachment(file) {
   return '';
 }
 
-function getTotalAttachmentSize(nextFiles = []) {
-  const existingSize = AssistantState.attachments.reduce((total, attachment) => total + attachment.size, 0);
-  const nextSize = nextFiles.reduce((total, file) => total + file.size, 0);
-  return existingSize + nextSize;
-}
-
 function readFileAsDataURL(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -499,7 +493,7 @@ function renderAssistantAttachments() {
           <p>${escapeHTML(attachment.name)}</p>
           <span>${escapeHTML((attachment.size / (1024 * 1024)).toFixed(2))} MB • ${escapeHTML(getAttachmentMeta(attachment.type)?.label || 'Attachment')}</span>
         </div>
-        <button class="attachment-remove" type="button" data-attachment-remove="${index}" aria-label="Remove attachment">✕</button>
+        <button class="attachment-remove" type="button" data-attachment-remove="${index}" aria-label="Remove attachment ${escapeHTML(attachment.name)}">✕</button>
       </article>
     `)
     .join('');
@@ -510,16 +504,26 @@ async function handleAssistantFiles(fileList) {
   if (!files.length) return;
 
   clearAssistantFeedback();
-
-  if (getTotalAttachmentSize(files) > MAX_TOTAL_ATTACHMENT_SIZE) {
-    setAssistantFeedback('assistantError', 'Attachments exceed the 20MB total limit. Remove a file or choose smaller uploads.');
-    return;
-  }
+  const existingKeys = new Set(
+    AssistantState.attachments.map((attachment) => `${attachment.name}:${attachment.type}:${attachment.size}`)
+  );
+  let runningTotal = AssistantState.attachments.reduce((total, attachment) => total + attachment.size, 0);
 
   for (const file of files) {
+    const fileKey = `${file.name}:${file.type}:${file.size}`;
+    if (existingKeys.has(fileKey)) {
+      setAssistantFeedback('assistantError', `${file.name} is already attached.`);
+      continue;
+    }
+
     const validationError = validateAttachment(file);
     if (validationError) {
       setAssistantFeedback('assistantError', validationError);
+      continue;
+    }
+
+    if (runningTotal + file.size > MAX_TOTAL_ATTACHMENT_SIZE) {
+      setAssistantFeedback('assistantError', 'Attachments exceed the 20MB total limit. Remove a file or choose smaller uploads.');
       continue;
     }
 
@@ -533,6 +537,8 @@ async function handleAssistantFiles(fileList) {
         base64,
         previewUrl: isImageAttachment(file.type) ? dataUrl : ''
       });
+      existingKeys.add(fileKey);
+      runningTotal += file.size;
     } catch (error) {
       console.error('Attachment error:', error);
       setAssistantFeedback('assistantError', error instanceof Error ? error.message : 'Unable to read one of the selected files.');
