@@ -26,6 +26,12 @@ import { createServer } from './server.js';
 const CURRENT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const APP_ROOT = path.basename(CURRENT_DIR) === 'dist' ? path.resolve(CURRENT_DIR, '..') : CURRENT_DIR;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const STANDALONE_ASSET_PATHS = new Map([
+  ['/', 'index.html'],
+  ['/index.html', 'index.html'],
+  ['/app.js', 'app.js'],
+  ['/styles.css', 'styles.css']
+]);
 const SUPPORTED_ATTACHMENT_TYPES = new Map([
   ['image/jpeg', { kind: 'image', format: 'jpeg' }],
   ['image/png', { kind: 'image', format: 'png' }],
@@ -45,6 +51,11 @@ const askRequestSchema = z.object({
 });
 
 type AskRequest = z.infer<typeof askRequestSchema>;
+type SupportedAttachmentType = NonNullable<ReturnType<typeof SUPPORTED_ATTACHMENT_TYPES.get>>;
+type PreparedAttachment = AskRequest['attachments'][number] & {
+  bytes: Uint8Array<ArrayBuffer>;
+  supportedType: SupportedAttachmentType;
+};
 
 type AssistantResponsePayload = {
   mode: 'ai' | 'demo';
@@ -64,22 +75,45 @@ function hasBedrockConfiguration(): boolean {
   return Boolean(process.env.AWS_REGION && process.env.BEDROCK_MODEL_ID);
 }
 
-function validateAttachments(attachments: AskRequest['attachments']): string | null {
+function prepareAttachments(attachments: AskRequest['attachments']): { attachments: PreparedAttachment[]; error?: string } {
+  const preparedAttachments: PreparedAttachment[] = [];
+
   for (const attachment of attachments) {
     const supportedType = SUPPORTED_ATTACHMENT_TYPES.get(attachment.type);
     if (!supportedType) {
-      return `Unsupported file type: ${attachment.name}. Supported files are JPG, PNG, WEBP, PDF, and DOCX.`;
+      return {
+        attachments: [],
+        error: `Unsupported file type: ${attachment.name}. Supported files are JPG, PNG, WEBP, PDF, and DOCX.`
+      };
     }
 
-    if (attachment.size > MAX_ATTACHMENT_SIZE) {
-      return `${attachment.name} exceeds the 10MB file limit.`;
+    const bytes = Uint8Array.from(Buffer.from(attachment.base64, 'base64'));
+
+    if (bytes.byteLength > MAX_ATTACHMENT_SIZE) {
+      return {
+        attachments: [],
+        error: `${attachment.name} exceeds the 10MB file limit.`
+      };
     }
+
+    if (attachment.size !== bytes.byteLength) {
+      return {
+        attachments: [],
+        error: `${attachment.name} could not be verified because the uploaded file size did not match the payload.`
+      };
+    }
+
+    preparedAttachments.push({
+      ...attachment,
+      bytes,
+      supportedType
+    });
   }
 
-  return null;
+  return { attachments: preparedAttachments };
 }
 
-function createDemoResponse(question: string, attachments: AskRequest['attachments'], reason?: string): AssistantResponsePayload {
+function createDemoResponse(question: string, attachments: Array<{ name: string }>, reason?: string): AssistantResponsePayload {
   const attachmentNames = attachments.map((attachment) => attachment.name).join(', ');
   const reasonText = reason ? ` ${reason}` : '';
 
@@ -129,7 +163,7 @@ function normalizeAssistantResponse(payload: unknown, mode: AssistantResponsePay
   };
 }
 
-async function askBedrock(question: string, attachments: AskRequest['attachments']): Promise<AssistantResponsePayload> {
+async function askBedrock(question: string, attachments: PreparedAttachment[]): Promise<AssistantResponsePayload> {
   if (!hasBedrockConfiguration()) {
     return createDemoResponse(question, attachments, 'Missing AWS configuration for Bedrock.');
   }
@@ -158,26 +192,19 @@ async function askBedrock(question: string, attachments: AskRequest['attachments
   ];
 
   for (const attachment of attachments) {
-    const supportedType = SUPPORTED_ATTACHMENT_TYPES.get(attachment.type);
-    if (!supportedType) {
-      continue;
-    }
-
-    const bytes = Uint8Array.from(Buffer.from(attachment.base64, 'base64'));
-
-    if (supportedType.kind === 'image') {
+    if (attachment.supportedType.kind === 'image') {
       contentBlocks.push({
         image: {
-          format: supportedType.format,
-          source: { bytes }
+          format: attachment.supportedType.format,
+          source: { bytes: attachment.bytes }
         }
       });
     } else {
       contentBlocks.push({
         document: {
-          format: supportedType.format,
+          format: attachment.supportedType.format,
           name: sanitizeAttachmentName(attachment.name),
-          source: { bytes }
+          source: { bytes: attachment.bytes }
         }
       });
     }
@@ -244,13 +271,13 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
       return;
     }
 
-    const validationError = validateAttachments(parsed.data.attachments);
-    if (validationError) {
-      res.status(400).json({ error: validationError });
+    const prepared = prepareAttachments(parsed.data.attachments);
+    if (prepared.error) {
+      res.status(400).json({ error: prepared.error });
       return;
     }
 
-    const response = await askBedrock(parsed.data.question, parsed.data.attachments);
+    const response = await askBedrock(parsed.data.question, prepared.attachments);
     res.json(response);
   });
 
@@ -281,7 +308,11 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
     }
   });
 
-  app.use(express.static(APP_ROOT));
+  for (const [routePath, fileName] of STANDALONE_ASSET_PATHS.entries()) {
+    app.get(routePath, (_req: Request, res: Response) => {
+      res.sendFile(path.join(APP_ROOT, fileName));
+    });
+  }
 
   const httpServer = app.listen(port, (err) => {
     if (err) {

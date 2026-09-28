@@ -23,7 +23,8 @@ const AppState = {
 
 const AssistantState = {
   attachments: [],
-  latestResponse: null
+  latestResponse: null,
+  lastImportedActionsKey: ''
 };
 
 const PRIORITY_RANK = {
@@ -567,6 +568,7 @@ function buildClientDemoResponse(question, attachments) {
 
 function renderAssistantResponse(response) {
   AssistantState.latestResponse = response;
+  AssistantState.lastImportedActionsKey = '';
   setAssistantMode(response.mode);
 
   const responseCard = $('assistantResponseCard');
@@ -835,13 +837,39 @@ function addAssistantActionsToPlanner() {
     return;
   }
 
+  const actionsKey = JSON.stringify(actions);
+  if (AssistantState.lastImportedActionsKey === actionsKey) {
+    setAssistantFeedback('assistantPlannerFeedback', 'These recommendations were already added to My Planner.');
+    return;
+  }
+
+  const existingTitles = new Set(
+    AppState.tasks.map((task) => String(task.title || '').trim().toLowerCase()).filter(Boolean)
+  );
+
   const newTasks = actions
     .filter(Boolean)
+    .filter((action) => !existingTitles.has(String(action).trim().toLowerCase()))
     .map((action) => createTaskRecord(action, inferTaskPriority(action), inferTaskDueDate(action)));
+
+  if (!newTasks.length) {
+    AssistantState.lastImportedActionsKey = actionsKey;
+    const addToPlannerBtn = $('assistantAddToPlannerBtn');
+    if (addToPlannerBtn) {
+      addToPlannerBtn.disabled = true;
+    }
+    setAssistantFeedback('assistantPlannerFeedback', 'These recommendations are already in My Planner.');
+    return;
+  }
 
   AppState.tasks.push(...newTasks);
   saveTasks();
   renderPlannerTasks();
+  AssistantState.lastImportedActionsKey = actionsKey;
+  const addToPlannerBtn = $('assistantAddToPlannerBtn');
+  if (addToPlannerBtn) {
+    addToPlannerBtn.disabled = true;
+  }
   setAssistantFeedback('assistantPlannerFeedback', `${newTasks.length} task${newTasks.length === 1 ? '' : 's'} added to My Planner.`);
 }
 
