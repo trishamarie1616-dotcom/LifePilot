@@ -644,6 +644,27 @@ function releaseAttachmentPreview(attachment) {
   }
 }
 
+function cloneAttachmentForRequest(attachment) {
+  return {
+    id: attachment.id,
+    file: attachment.file,
+    name: attachment.name,
+    size: attachment.size,
+    type: attachment.type,
+    lastModified: attachment.lastModified
+  };
+}
+
+function createAttachmentState(attachment) {
+  const extension = getAttachmentExtension(attachment.name);
+  return {
+    ...cloneAttachmentForRequest(attachment),
+    previewUrl: IMAGE_ATTACHMENT_EXTENSIONS.has(extension) && attachment.file
+      ? URL.createObjectURL(attachment.file)
+      : ''
+  };
+}
+
 function renderAttachmentPreviews() {
   const container = $('attachmentPreviews');
   const list = $('previewsList');
@@ -707,6 +728,12 @@ function removeAssistantAttachment(attachmentId) {
   if (inputEl && !AppState.assistantAttachments.length) {
     inputEl.value = '';
   }
+}
+
+function restoreAssistantAttachments(attachments) {
+  AppState.assistantAttachments.forEach(releaseAttachmentPreview);
+  AppState.assistantAttachments = (attachments || []).map(createAttachmentState);
+  renderAttachmentPreviews();
 }
 
 function showAssistantError(message) {
@@ -845,14 +872,19 @@ function getCurrentAssistantRequest(questionOverride = '') {
   const questionInput = $('aiQuestion');
   return {
     question: String(questionOverride || questionInput?.value || '').trim(),
-    attachments: AppState.assistantAttachments.map((attachment) => ({ ...attachment }))
+    attachments: AppState.assistantAttachments.map(cloneAttachmentForRequest)
   };
 }
 
 async function submitAssistantQuestion(overrideRequest) {
   const askButton = $('askLifePilotBtn');
   const loadingOverlay = $('aiLoadingOverlay');
-  const request = getCurrentAssistantRequest(overrideRequest?.question);
+  const request = {
+    question: String(overrideRequest?.question || getCurrentAssistantRequest().question).trim(),
+    attachments: overrideRequest?.attachments
+      ? overrideRequest.attachments.map(cloneAttachmentForRequest)
+      : AppState.assistantAttachments.map(cloneAttachmentForRequest)
+  };
 
   if (!request.question) {
     const questionInput = $('aiQuestion');
@@ -874,7 +906,10 @@ async function submitAssistantQuestion(overrideRequest) {
     askButton.disabled = true;
   }
 
-  AppState.lastAssistantRequest = { question: request.question };
+  AppState.lastAssistantRequest = {
+    question: request.question,
+    attachments: request.attachments.map(cloneAttachmentForRequest)
+  };
 
   try {
     const provider = getAIProvider();
@@ -1043,12 +1078,13 @@ function attachAIAssistantHandlers() {
 
   if (retryBtn) {
     retryBtn.addEventListener('click', () => {
-      const lastQuestion = AppState.lastAssistantRequest?.question;
+      const { question: lastQuestion = '', attachments = [] } = AppState.lastAssistantRequest || {};
       if (lastQuestion) {
         if (questionInput) {
           questionInput.value = lastQuestion;
         }
-        submitAssistantQuestion({ question: lastQuestion });
+        restoreAssistantAttachments(attachments);
+        submitAssistantQuestion({ question: lastQuestion, attachments });
       } else {
         showAssistantError('There is no previous LifePilot request to retry yet.');
       }
