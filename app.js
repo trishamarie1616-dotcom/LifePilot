@@ -680,15 +680,124 @@ function attachEventHandlers() {
   }
 }
 
+// Phase 2: local-only assistant interface. No file leaves the browser.
+const AI_ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'pdf', 'docx', 'webp']);
+const AI_MAX_FILE_BYTES = 10 * 1024 * 1024;
+const AIAttachments = [];
+
+function aiStatus(message) {
+  const status = $('aiAttachmentStatus');
+  if (status) status.textContent = message;
+}
+
+function renderAIAttachments() {
+  const section = $('attachmentPreviews');
+  const list = $('previewsList');
+  if (!section || !list) return;
+  section.style.display = AIAttachments.length ? 'block' : 'none';
+  list.replaceChildren();
+  AIAttachments.forEach((item) => {
+    const card = document.createElement('div');
+    card.className = 'attachment-card';
+    if (item.file.type.startsWith('image/')) {
+      const img = document.createElement('img');
+      img.src = item.url;
+      img.alt = `Preview of ${item.file.name}`;
+      img.className = 'attachment-thumb';
+      card.appendChild(img);
+    } else {
+      const icon = document.createElement('span');
+      icon.className = 'attachment-file-icon';
+      icon.textContent = item.file.name.toLowerCase().endsWith('.pdf') ? '📕' : '📄';
+      card.appendChild(icon);
+    }
+    const info = document.createElement('span');
+    info.className = 'attachment-info';
+    info.textContent = `${item.file.name} · ${(item.file.size / 1024 / 1024).toFixed(2)} MB`;
+    card.appendChild(info);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'attachment-remove';
+    remove.textContent = 'Remove';
+    remove.setAttribute('aria-label', `Remove ${item.file.name}`);
+    remove.addEventListener('click', () => {
+      URL.revokeObjectURL(item.url);
+      AIAttachments.splice(AIAttachments.indexOf(item), 1);
+      renderAIAttachments();
+      aiStatus('Attachment removed.');
+    });
+    card.appendChild(remove);
+    list.appendChild(card);
+  });
+}
+
+function clearAIAttachments() {
+  AIAttachments.forEach((item) => URL.revokeObjectURL(item.url));
+  AIAttachments.length = 0;
+  const upload = $('fileUpload');
+  if (upload) upload.value = '';
+  renderAIAttachments();
+  aiStatus('Attachments cleared.');
+}
+
+function attachAIEventHandlers() {
+  const upload = $('fileUpload');
+  if (upload) upload.addEventListener('change', () => {
+    const rejected = [];
+    Array.from(upload.files || []).forEach((file) => {
+      const extension = file.name.split('.').pop().toLowerCase();
+      if (!AI_ALLOWED_EXTENSIONS.has(extension)) {
+        rejected.push(`${file.name}: unsupported type`);
+      } else if (file.size > AI_MAX_FILE_BYTES) {
+        rejected.push(`${file.name}: exceeds 10 MB`);
+      } else {
+        AIAttachments.push({ file, url: URL.createObjectURL(file) });
+      }
+    });
+    upload.value = '';
+    renderAIAttachments();
+    aiStatus(rejected.length ? rejected.join('; ') : `${AIAttachments.length} attachment(s) ready for preview.`);
+  });
+  const clear = $('clearAllAttachments');
+  if (clear) clear.addEventListener('click', clearAIAttachments);
+  const send = $('askLifePilotBtn');
+  if (send) send.addEventListener('click', () => {
+    const question = ($('aiQuestion')?.value || '').trim();
+    if (!question && !AIAttachments.length) {
+      aiStatus('Type a question or attach a file first.');
+      $('aiQuestion')?.focus();
+      return;
+    }
+    // A local-only prototype cannot inspect or analyze attachments.
+    const answer = $('aiAnswer');
+    if (answer) answer.textContent = 'Your question and attachments are ready. This is a local preview: AI answers and file analysis are not connected yet. A secure server-side AI endpoint is required before sending files or generating answers.';
+    const response = $('aiResponseContainer');
+    if (response) response.style.display = 'block';
+    ['explanationSection', 'uncertaintiesSection', 'actionsSection', 'followupsSection'].forEach((id) => {
+      const section = $(id);
+      if (section) section.style.display = 'none';
+    });
+    aiStatus('Preview only — nothing was uploaded.');
+    response?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+  const close = $('closeResponseBtn');
+  if (close) close.addEventListener('click', () => {
+    const response = $('aiResponseContainer');
+    if (response) response.style.display = 'none';
+  });
+}
+
 // Initialize the web app
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     attachEventHandlers();
+    attachAIEventHandlers();
     renderPlannerTasks();
     renderSavedPlans();
   });
 } else {
   attachEventHandlers();
+  attachAIEventHandlers();
   renderPlannerTasks();
   renderSavedPlans();
 }

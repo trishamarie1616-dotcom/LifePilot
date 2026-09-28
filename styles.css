@@ -801,3 +801,28 @@ input:focus, textarea:focus, select:focus {
     background: rgba(99, 102, 241, 0.1);
   }
 }
+
+/* Phase 2: mobile-first AI assistant preview */
+.ask-lifepilot-section { max-width: 760px; margin: 0 auto; }
+.section-description { color: var(--muted); line-height: 1.55; }
+.ai-badge { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: var(--accent); color: var(--purple-dark); font-size: .75rem; font-weight: 700; }
+.ai-textarea { display: block; width: 100%; min-height: 130px; resize: vertical; margin: 16px 0; }
+.ai-attachments-section { margin: 18px 0; }
+.file-upload-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 12px 16px; border: 2px dashed var(--purple-light); border-radius: 12px; color: var(--purple-dark); background: var(--accent); font-weight: 700; cursor: pointer; }
+.file-upload-btn:focus-within { outline: 3px solid var(--teal-dark); outline-offset: 3px; }
+.file-help-text, .ai-status { font-size: .85rem; line-height: 1.5; color: var(--muted); }
+.attachment-previews { margin-top: 16px; padding: 14px; background: var(--soft); border: 1px solid var(--line); border-radius: 14px; }
+.attachments-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.attachments-header h4 { margin: 0 0 12px; }
+.btn-small, .attachment-remove { padding: 8px 10px; border-radius: 8px; background: var(--accent); color: var(--purple-dark); font-weight: 700; }
+.previews-list { display: grid; gap: 10px; }
+.attachment-card { display: flex; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; min-width: 0; }
+.attachment-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+.attachment-file-icon { font-size: 2rem; }
+.attachment-info { min-width: 0; flex: 1; overflow-wrap: anywhere; font-size: .85rem; }
+.ai-response-container, .ai-error-container { margin-top: 20px; }
+.ai-response-card, .error-card { padding: 20px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-light); }
+.ai-response-section { padding: 12px 0; }
+.response-title { margin: 0 0 8px; color: var(--purple-dark); }
+.response-content { white-space: pre-wrap; line-height: 1.65; }
+@media (max-width: 480px) { .attachment-card { flex-wrap: wrap; } .attachment-info { flex-basis: calc(100% - 85px); } .attachment-remove { margin-left: auto; } .ask-lifepilot-section .section-header { align-items: flex-start; gap: 12px; } }
