@@ -767,7 +767,7 @@ async function submitAskLifePilot() {
   } catch (error) {
     console.error('Ask request failed:', error);
     const message = error instanceof Error ? error.message : 'Unable to reach AI backend right now.';
-    setAskError(`${message} Use retry after checking your backend connection.`);
+    setAskError(`${message} Please retry after checking your backend connection.`);
   } finally {
     setAskLoadingState(false);
   }

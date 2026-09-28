@@ -42,14 +42,25 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
   });
 
   app.post('/api/ask', async (req: Request, res: Response) => {
+    let askRequest;
+
     try {
-      const askRequest = normalizeAskRequest(req.body);
-      const result = await aiService.answer(askRequest);
-      res.json(result);
+      askRequest = normalizeAskRequest(req.body);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({
         message
+      });
+      return;
+    }
+
+    try {
+      const result = await aiService.answer(askRequest);
+      res.json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({
+        message: `AI service failed: ${message}`
       });
     }
   });
