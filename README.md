@@ -7,8 +7,9 @@
 LifePilot consists of three integrated components:
 
 1. **Standalone Web App** – A static GitHub Pages application with localStorage
-2. **MCP Server** – Exposes LifePilot planning as an MCP tool with Streamable HTTP support
-3. **MCP App UI** – An interactive UI resource that renders plans in MCP-compatible hosts
+2. **AI Assistant Backend** – Optional secure Bedrock-backed `/api/ask` endpoint with demo fallback
+3. **MCP Server** – Exposes LifePilot planning as an MCP tool with Streamable HTTP support
+4. **MCP App UI** – An interactive UI resource that renders plans in MCP-compatible hosts
 
 ## Standalone Web App
 
@@ -21,12 +22,15 @@ The original LifePilot application runs as a static web app on GitHub Pages. No 
 - Plans are saved to browser localStorage
 
 **Features:**
+- Four-tab dashboard: My Planner, Documents, My Goals, AI Assistant
 - Vehicle repair scenario detection and planning
 - Job search planning
 - Medical appointment preparation
 - Travel planning
 - General goal breakdown
 - Plan persistence via localStorage
+- Ask LifePilot assistant with JPG/PNG/WEBP/PDF/DOCX uploads
+- Demo mode fallback when Bedrock is unavailable
 
 **Files:**
 - `index.html` – Main page (GitHub Pages compatible)
@@ -96,6 +100,11 @@ npm run mcp:start
 ```
 
 Starts the server on `http://localhost:3001/mcp` using Streamable HTTP transport. This is the recommended mode for MCP hosts.
+
+The same server also serves the standalone web app and the AI Assistant endpoint at:
+
+- `http://localhost:3001/`
+- `POST http://localhost:3001/api/ask`
 
 **Custom port:**
 ```bash
@@ -217,15 +226,28 @@ The MCP App UI communicates with the MCP host via:
 ✅ CORS support
 ✅ TypeScript compilation
 ✅ Vite bundling (UI as single HTML file)
+✅ Four-tab dashboard with AI Assistant
+✅ Secure backend interface for Bedrock with demo mode fallback
+✅ Attachment validation for JPG/PNG/WEBP/PDF/DOCX uploads
+✅ Add AI-recommended actions to My Planner
 
 ## What's NOT Implemented Yet
 
-❌ AWS Bedrock integration (for AI backend)
 ❌ Alexa+ skill (standalone)
 ❌ Persistent database for saved plans (MCP version)
-❌ Real AI model calls (still using rule-based mock planner)
 ❌ Voice input/output
 ❌ Multi-turn conversation in MCP context
+
+## AWS Bedrock Configuration
+
+To enable live AI responses instead of demo mode, set:
+
+```bash
+export AWS_REGION=us-east-1
+export BEDROCK_MODEL_ID=anthropic.claude-3-5-sonnet-20241022-v2:0
+```
+
+You also need valid AWS credentials through the normal AWS SDK credential chain (environment variables, profile, or attached role). No AWS secrets are exposed in the frontend.
 
 ## Dependencies
 

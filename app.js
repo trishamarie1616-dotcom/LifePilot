@@ -21,11 +21,34 @@ const AppState = {
   currentPlan: null
 };
 
+const AssistantState = {
+  attachments: [],
+  latestResponse: null,
+  lastImportedActionsKey: ''
+};
+
 const PRIORITY_RANK = {
   high: 0,
   medium: 1,
   low: 2
 };
+
+const SUPPORTED_ATTACHMENT_TYPES = {
+  'image/jpeg': { label: 'JPG image', kind: 'image', format: 'jpeg' },
+  'image/png': { label: 'PNG image', kind: 'image', format: 'png' },
+  'image/webp': { label: 'WEBP image', kind: 'image', format: 'webp' },
+  'application/pdf': { label: 'PDF document', kind: 'document', format: 'pdf' },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+    label: 'Word document',
+    kind: 'document',
+    format: 'docx'
+  }
+};
+
+const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_SIZE = 20 * 1024 * 1024;
+const URGENT_KEYWORDS = /\b(urgent|immediately|asap|today|now|deadline|overdue|critical)\b/i;
+const THIS_WEEK_KEYWORDS = /\b(this week|within a week|soon|next step)\b/i;
 
 const $ = (id) => document.getElementById(id);
 const input = $('userInput');
@@ -366,6 +389,262 @@ function escapeHTML(value) {
   }[char]));
 }
 
+function setLoadingState(isVisible, message) {
+  const overlay = $('loadingOverlay');
+  const loadingMessage = $('loadingMessage');
+
+  if (loadingMessage) {
+    loadingMessage.textContent = message || 'Loading...';
+  }
+
+  if (overlay) {
+    overlay.style.display = isVisible ? 'grid' : 'none';
+  }
+}
+
+function setTextContent(id, value) {
+  const element = $(id);
+  if (element) {
+    element.textContent = value || '';
+  }
+}
+
+function setAssistantFeedback(id, message) {
+  const element = $(id);
+  if (!element) return;
+  element.textContent = message || '';
+  element.style.display = message ? 'block' : 'none';
+}
+
+function clearAssistantFeedback() {
+  setAssistantFeedback('assistantError', '');
+  setAssistantFeedback('assistantPlannerFeedback', '');
+}
+
+function setAssistantMode(mode) {
+  const badge = $('assistantModeBadge');
+  const responseBadge = $('assistantResponseBadge');
+  const isAI = mode === 'ai';
+  const label = isAI ? '✓ AI-Powered' : '🔄 Demo Mode';
+
+  [badge, responseBadge].forEach((element) => {
+    if (!element) return;
+    element.textContent = label;
+    element.classList.toggle('assistant-badge-ai', isAI);
+    element.classList.toggle('assistant-badge-demo', !isAI);
+  });
+}
+
+function getAttachmentMeta(type) {
+  return SUPPORTED_ATTACHMENT_TYPES[type] || null;
+}
+
+function getAttachmentIcon(type) {
+  const meta = getAttachmentMeta(type);
+  if (!meta) return '📎';
+  if (meta.kind === 'image') return '🖼️';
+  if (meta.format === 'pdf') return '📄';
+  return '📝';
+}
+
+function isImageAttachment(type) {
+  const meta = getAttachmentMeta(type);
+  return meta?.kind === 'image';
+}
+
+function validateAttachment(file) {
+  const meta = getAttachmentMeta(file.type);
+  if (!meta) {
+    return `Unsupported file type: ${file.name}. Please upload JPG, PNG, WEBP, PDF, or DOCX files.`;
+  }
+
+  if (file.size > MAX_ATTACHMENT_SIZE) {
+    return `${file.name} is larger than 10MB. Please choose a smaller file.`;
+  }
+
+  return '';
+}
+
+function readFileAsDataURL(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderAssistantAttachments() {
+  const list = $('assistantAttachmentList');
+  if (!list) return;
+
+  if (!AssistantState.attachments.length) {
+    list.innerHTML = '';
+    return;
+  }
+
+  list.innerHTML = AssistantState.attachments
+    .map((attachment, index) => `
+      <article class="attachment-chip">
+        ${attachment.previewUrl
+          ? `<img class="attachment-preview-image" src="${attachment.previewUrl}" alt="${escapeHTML(attachment.name)} preview" />`
+          : `<div class="attachment-file-icon" aria-hidden="true">${getAttachmentIcon(attachment.type)}</div>`}
+        <div class="attachment-details">
+          <p>${escapeHTML(attachment.name)}</p>
+          <span>${escapeHTML((attachment.size / (1024 * 1024)).toFixed(2))} MB • ${escapeHTML(getAttachmentMeta(attachment.type)?.label || 'Attachment')}</span>
+        </div>
+        <button class="attachment-remove" type="button" data-attachment-remove="${index}" aria-label="Remove attachment ${escapeHTML(attachment.name)}">✕</button>
+      </article>
+    `)
+    .join('');
+}
+
+async function handleAssistantFiles(fileList) {
+  const files = Array.from(fileList || []);
+  if (!files.length) return;
+
+  clearAssistantFeedback();
+  const existingKeys = new Set(
+    AssistantState.attachments.map((attachment) => `${attachment.name}:${attachment.type}:${attachment.size}`)
+  );
+  let runningTotal = AssistantState.attachments.reduce((total, attachment) => total + attachment.size, 0);
+
+  for (const file of files) {
+    const fileKey = `${file.name}:${file.type}:${file.size}`;
+    if (existingKeys.has(fileKey)) {
+      setAssistantFeedback('assistantError', `${file.name} is already attached.`);
+      continue;
+    }
+
+    const validationError = validateAttachment(file);
+    if (validationError) {
+      setAssistantFeedback('assistantError', validationError);
+      continue;
+    }
+
+    if (runningTotal + file.size > MAX_TOTAL_ATTACHMENT_SIZE) {
+      setAssistantFeedback('assistantError', 'Attachments exceed the 20MB total limit. Remove a file or choose smaller uploads.');
+      continue;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataURL(file);
+      const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+      const previewUrl = isImageAttachment(file.type) && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function'
+        ? URL.createObjectURL(file)
+        : (isImageAttachment(file.type) ? dataUrl : '');
+      AssistantState.attachments.push({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        base64,
+        previewUrl
+      });
+      existingKeys.add(fileKey);
+      runningTotal += file.size;
+    } catch (error) {
+      console.error('Attachment error:', error);
+      setAssistantFeedback('assistantError', error instanceof Error ? error.message : 'Unable to read one of the selected files.');
+    }
+  }
+
+  renderAssistantAttachments();
+
+  const fileInput = $('assistantFileInput');
+  if (fileInput) {
+    fileInput.value = '';
+  }
+}
+
+function removeAssistantAttachment(index) {
+  const attachment = AssistantState.attachments[index];
+  if (attachment?.previewUrl?.startsWith('blob:') && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
+    URL.revokeObjectURL(attachment.previewUrl);
+  }
+  AssistantState.attachments = AssistantState.attachments.filter((_, itemIndex) => itemIndex !== index);
+  renderAssistantAttachments();
+}
+
+function buildClientDemoResponse(question, attachments) {
+  const attachmentNames = attachments.map((attachment) => attachment.name).join(', ');
+  const answer = attachmentNames
+    ? `Demo Mode is active, so I cannot inspect ${attachmentNames} with a live Bedrock model right now. Based on your question, start by confirming the key facts in those files and identifying the decision you need to make next.`
+    : 'Demo Mode is active, so I cannot call the live Bedrock backend right now. I can still provide a structured prototype response based on the question you entered.';
+
+  return {
+    mode: 'demo',
+    answer,
+    explanation: `Question received: "${question}". LifePilot will use Amazon Bedrock when the backend is available, but this fallback keeps the UI, file handling, and planner integration fully testable without exposing credentials in the frontend.`,
+    uncertainties: [
+      attachmentNames ? 'The uploaded files were not analyzed by a live model in demo mode.' : 'No live model was available to verify assumptions.',
+      'You may need to provide more context or enable AWS configuration for a production-quality answer.'
+    ],
+    actions: [
+      'Review the question and identify the main outcome you need.',
+      attachmentNames ? 'Open the attached files and confirm the most important details or deadlines.' : 'Gather any screenshots, PDFs, or notes that support the question.',
+      'Decide on the first concrete step you can add to My Planner today.'
+    ],
+    followUpQuestions: [
+      'What result would make this feel resolved for you?',
+      'Is there a deadline or urgent blocker involved?'
+    ]
+  };
+}
+
+function renderAssistantResponse(response) {
+  AssistantState.latestResponse = response;
+  AssistantState.lastImportedActionsKey = '';
+  setAssistantMode(response.mode);
+
+  const responseCard = $('assistantResponseCard');
+  const emptyState = $('assistantEmptyState');
+  const uncertaintiesSection = $('assistantUncertaintiesSection');
+  const followupsSection = $('assistantFollowupsSection');
+  const addToPlannerBtn = $('assistantAddToPlannerBtn');
+
+  setTextContent('assistantAnswer', response.answer || '');
+  setTextContent('assistantExplanation', response.explanation || '');
+
+  const uncertainties = Array.isArray(response.uncertainties) ? response.uncertainties.filter(Boolean) : [];
+  const actions = Array.isArray(response.actions) ? response.actions.filter(Boolean) : [];
+  const followups = Array.isArray(response.followUpQuestions) ? response.followUpQuestions.filter(Boolean) : [];
+
+  const uncertaintiesList = $('assistantUncertainties');
+  if (uncertaintiesList) {
+    uncertaintiesList.innerHTML = uncertainties.map((item) => `<li>${escapeHTML(item)}</li>`).join('');
+  }
+
+  const actionsList = $('assistantActions');
+  if (actionsList) {
+    actionsList.innerHTML = actions.map((item) => `<li class="assistant-action-item">${escapeHTML(item)}</li>`).join('');
+  }
+
+  const followupsList = $('assistantFollowups');
+  if (followupsList) {
+    followupsList.innerHTML = followups.map((item) => `<li>${escapeHTML(item)}</li>`).join('');
+  }
+
+  if (uncertaintiesSection) {
+    uncertaintiesSection.style.display = uncertainties.length ? 'block' : 'none';
+  }
+
+  if (followupsSection) {
+    followupsSection.style.display = followups.length ? 'block' : 'none';
+  }
+
+  if (addToPlannerBtn) {
+    addToPlannerBtn.disabled = !actions.length;
+  }
+
+  if (responseCard) {
+    responseCard.style.display = 'block';
+  }
+
+  if (emptyState) {
+    emptyState.style.display = 'none';
+  }
+}
+
 function generatePlanFromRequest() {
   const request = input.value.trim();
   if (!request) {
@@ -373,10 +652,7 @@ function generatePlanFromRequest() {
     return;
   }
 
-  const overlay = $('loadingOverlay');
-  if (overlay) {
-    overlay.style.display = 'grid';
-  }
+  setLoadingState(true, 'Creating your action plan...');
 
   setTimeout(() => {
     try {
@@ -397,9 +673,7 @@ function generatePlanFromRequest() {
       console.error('Error generating plan:', error);
       alert('I\'m sorry, but there was an error. Please try again.');
     } finally {
-      if (overlay) {
-        overlay.style.display = 'none';
-      }
+      setLoadingState(false);
     }
   }, 350);
 }
@@ -519,14 +793,7 @@ function addPlannerTask() {
     return;
   }
 
-  AppState.tasks.push({
-    id: Date.now().toString(),
-    title,
-    priority: prioritySelect.value || 'medium',
-    dueDate: dueDateInput.value || '',
-    completed: false,
-    createdAt: Date.now()
-  });
+  AppState.tasks.push(createTaskRecord(title, prioritySelect.value || 'medium', dueDateInput.value || ''));
 
   saveTasks();
   renderPlannerTasks();
@@ -535,6 +802,17 @@ function addPlannerTask() {
   dueDateInput.value = '';
   prioritySelect.value = 'medium';
   taskInput.focus();
+}
+
+function createTaskRecord(title, priority = 'medium', dueDate = '') {
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+    title,
+    priority,
+    dueDate,
+    completed: false,
+    createdAt: Date.now()
+  };
 }
 
 function updateTask(taskId, updater) {
@@ -551,6 +829,155 @@ function deleteTask(taskId) {
   AppState.tasks = nextTasks;
   saveTasks();
   renderPlannerTasks();
+}
+
+function inferTaskPriority(taskText) {
+  if (URGENT_KEYWORDS.test(taskText)) return 'high';
+  if (THIS_WEEK_KEYWORDS.test(taskText)) return 'medium';
+  return 'medium';
+}
+
+function inferTaskDueDate(taskText) {
+  const today = new Date();
+
+  if (URGENT_KEYWORDS.test(taskText)) {
+    return today.toISOString().slice(0, 10);
+  }
+
+  if (THIS_WEEK_KEYWORDS.test(taskText)) {
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    return nextWeek.toISOString().slice(0, 10);
+  }
+
+  return '';
+}
+
+function addAssistantActionsToPlanner() {
+  clearAssistantFeedback();
+
+  const actions = AssistantState.latestResponse?.actions || [];
+  if (!actions.length) {
+    setAssistantFeedback('assistantError', 'There are no recommended actions to add yet.');
+    return;
+  }
+
+  const actionsKey = JSON.stringify(actions);
+  if (AssistantState.lastImportedActionsKey === actionsKey) {
+    setAssistantFeedback('assistantPlannerFeedback', 'These recommendations were already added to My Planner.');
+    return;
+  }
+
+  const existingTitles = new Set(
+    AppState.tasks.map((task) => String(task.title || '').trim().toLowerCase()).filter(Boolean)
+  );
+
+  const newTasks = actions
+    .filter(Boolean)
+    .filter((action) => !existingTitles.has(String(action).trim().toLowerCase()))
+    .map((action) => createTaskRecord(action, inferTaskPriority(action), inferTaskDueDate(action)));
+
+  if (!newTasks.length) {
+    AssistantState.lastImportedActionsKey = actionsKey;
+    const addToPlannerBtn = $('assistantAddToPlannerBtn');
+    if (addToPlannerBtn) {
+      addToPlannerBtn.disabled = true;
+    }
+    setAssistantFeedback('assistantPlannerFeedback', 'These recommendations are already in My Planner.');
+    return;
+  }
+
+  AppState.tasks.push(...newTasks);
+  saveTasks();
+  renderPlannerTasks();
+  AssistantState.lastImportedActionsKey = actionsKey;
+  const addToPlannerBtn = $('assistantAddToPlannerBtn');
+  if (addToPlannerBtn) {
+    addToPlannerBtn.disabled = true;
+  }
+  setAssistantFeedback('assistantPlannerFeedback', `${newTasks.length} task${newTasks.length === 1 ? '' : 's'} added to My Planner.`);
+}
+
+async function askAssistant() {
+  const questionInput = $('aiQuestionInput');
+  const submitBtn = $('assistantSubmitBtn');
+  if (!questionInput || !submitBtn) return;
+
+  clearAssistantFeedback();
+
+  const question = questionInput.value.trim();
+  if (!question) {
+    questionInput.focus();
+    setAssistantFeedback('assistantError', 'Enter a question before asking LifePilot.');
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Thinking...';
+  setLoadingState(true, 'Analyzing your question...');
+
+  try {
+    let response;
+
+    try {
+      const apiUrl = new URL('/api/ask', window.location.href).toString();
+      let apiResponse;
+
+      try {
+        apiResponse = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            question,
+            attachments: AssistantState.attachments.map(({ name, type, size, base64 }) => ({
+              name,
+              type,
+              size,
+              base64
+            }))
+          })
+        });
+      } catch (error) {
+        console.warn('Assistant API unavailable, using demo mode:', error);
+        response = buildClientDemoResponse(question, AssistantState.attachments);
+      }
+
+      if (!apiResponse) {
+        renderAssistantResponse(response);
+        return;
+      }
+
+      if (!apiResponse.ok) {
+        const errorText = await apiResponse.text();
+        let errorMessage = `LifePilot could not process that request (${apiResponse.status}).`;
+
+        if (errorText) {
+          try {
+            const errorPayload = JSON.parse(errorText);
+            errorMessage = errorPayload.error || errorMessage;
+          } catch {
+            errorMessage = errorText;
+          }
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      response = await apiResponse.json();
+    } catch (error) {
+      console.error('Assistant request failed:', error);
+      setAssistantFeedback('assistantError', error instanceof Error ? error.message : 'Something went wrong. Please try again.');
+      return;
+    }
+
+    renderAssistantResponse(response);
+  } finally {
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Ask LifePilot';
+    setLoadingState(false);
+  }
 }
 
 function switchTab(tabName) {
@@ -678,6 +1105,52 @@ function attachEventHandlers() {
       }
     });
   }
+
+  const assistantAttachBtn = $('assistantAttachBtn');
+  const assistantFileInput = $('assistantFileInput');
+  const assistantAttachmentList = $('assistantAttachmentList');
+  const assistantSubmitBtn = $('assistantSubmitBtn');
+  const assistantQuestionInput = $('aiQuestionInput');
+  const assistantAddToPlannerBtn = $('assistantAddToPlannerBtn');
+
+  if (assistantAttachBtn && assistantFileInput) {
+    assistantAttachBtn.addEventListener('click', () => assistantFileInput.click());
+    assistantFileInput.addEventListener('change', (event) => {
+      const target = event.target;
+      if (target?.files) {
+        handleAssistantFiles(target.files);
+      }
+    });
+  }
+
+  if (assistantAttachmentList) {
+    assistantAttachmentList.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-attachment-remove]');
+      if (!button) return;
+
+      const index = Number(button.dataset.attachmentRemove);
+      if (Number.isInteger(index)) {
+        removeAssistantAttachment(index);
+      }
+    });
+  }
+
+  if (assistantSubmitBtn) {
+    assistantSubmitBtn.addEventListener('click', askAssistant);
+  }
+
+  if (assistantQuestionInput) {
+    assistantQuestionInput.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        askAssistant();
+      }
+    });
+  }
+
+  if (assistantAddToPlannerBtn) {
+    assistantAddToPlannerBtn.addEventListener('click', addAssistantActionsToPlanner);
+  }
 }
 
 // Initialize the web app
@@ -686,9 +1159,13 @@ if (document.readyState === 'loading') {
     attachEventHandlers();
     renderPlannerTasks();
     renderSavedPlans();
+    renderAssistantAttachments();
+    setAssistantMode('demo');
   });
 } else {
   attachEventHandlers();
   renderPlannerTasks();
   renderSavedPlans();
+  renderAssistantAttachments();
+  setAssistantMode('demo');
 }
