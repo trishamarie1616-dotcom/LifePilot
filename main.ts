@@ -31,7 +31,7 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
   const aiService = createAIService();
 
   const app = createMcpExpressApp({ host: '0.0.0.0' });
-  app.use(express.json({ limit: '12mb' }));
+  app.use(express.json({ limit: '20mb' }));
   app.use(cors());
 
   app.post('/api/ask', async (req: Request, res: Response) => {

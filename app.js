@@ -742,7 +742,6 @@ async function attachFilesToAsk(files) {
 
     AppState.askAttachments.push(...encoded);
     renderAttachmentPreviews();
-    setAskError('');
   } catch (error) {
     console.error('Attachment read error:', error);
     setAskError('One or more attachments could not be read. Please try again.');
