@@ -97,6 +97,23 @@ npm run mcp:start
 
 Starts the server on `http://localhost:3001/mcp` using Streamable HTTP transport. This is the recommended mode for MCP hosts.
 
+The same server also serves the standalone app at `/` and the AI Assistant at `POST /api/ask`. Configure the OpenAI key in the server environment; it is never needed by the browser:
+
+```bash
+export OPENAI_API_KEY="your-server-side-key"
+npm run mcp:start
+```
+
+The AI Assistant uses `gpt-4.1-mini` by default. Set `OPENAI_MODEL` on the server to override it. To test the endpoint:
+
+```bash
+curl -X POST http://localhost:3001/api/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question":"How can I prepare for a job interview?"}'
+```
+
+In Codespaces, open the forwarded port `3001` in a browser to use the app; the frontend and endpoint share that origin. GitHub Pages remains a static deployment and needs a same-origin backend or reverse proxy for AI requests.
+
 **Custom port:**
 ```bash
 PORT=3000 npm run mcp:start

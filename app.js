@@ -21,6 +21,9 @@ const AppState = {
   currentPlan: null
 };
 
+let lastAIQuestion = '';
+let lastAIResponse = null;
+
 const PRIORITY_RANK = {
   high: 0,
   medium: 1,
@@ -563,6 +566,102 @@ function switchTab(tabName) {
   });
 }
 
+function renderAIList(element, items) {
+  element.replaceChildren(...items.map((item) => {
+    const listItem = document.createElement('li');
+    listItem.textContent = item;
+    return listItem;
+  }));
+}
+
+function renderAIResponse(response) {
+  $('aiAnswer').textContent = response.answer;
+  $('aiExplanation').textContent = response.explanation;
+  renderAIList($('aiUncertainties'), response.uncertainties);
+  renderAIList($('aiActions'), response.recommendedActions);
+  renderAIList($('aiFollowups'), response.followUpQuestions);
+
+  $('explanationSection').style.display = response.explanation ? '' : 'none';
+  $('uncertaintiesSection').style.display = response.uncertainties.length ? '' : 'none';
+  $('actionsSection').style.display = response.recommendedActions.length ? '' : 'none';
+  $('followupsSection').style.display = response.followUpQuestions.length ? '' : 'none';
+  $('aiResponseContainer').style.display = 'block';
+  $('addActionsBtn').textContent = '+ Add Actions to My Planner';
+}
+
+function showAIError(message) {
+  $('errorMessage').textContent = message;
+  $('aiErrorContainer').style.display = 'block';
+}
+
+async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
+  const cleanQuestion = question.trim();
+  if (!cleanQuestion) {
+    $('aiQuestion').focus();
+    return;
+  }
+
+  lastAIQuestion = cleanQuestion;
+  lastAIResponse = null;
+  $('aiErrorContainer').style.display = 'none';
+  $('aiResponseContainer').style.display = 'none';
+  $('aiLoadingOverlay').style.display = 'grid';
+  $('askLifePilotBtn').disabled = true;
+
+  try {
+    const response = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: cleanQuestion })
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(result && typeof result.error === 'string'
+        ? result.error
+        : 'LifePilot could not answer your question. Please try again.');
+    }
+    if (
+      !result ||
+      typeof result.answer !== 'string' ||
+      typeof result.explanation !== 'string' ||
+      !Array.isArray(result.uncertainties) ||
+      !Array.isArray(result.recommendedActions) ||
+      !Array.isArray(result.followUpQuestions) ||
+      !result.uncertainties.every((item) => typeof item === 'string') ||
+      !result.recommendedActions.every((item) => typeof item === 'string') ||
+      !result.followUpQuestions.every((item) => typeof item === 'string')
+    ) {
+      throw new Error('LifePilot received an unexpected response. Please try again.');
+    }
+
+    lastAIResponse = result;
+    renderAIResponse(result);
+  } catch (error) {
+    showAIError(error instanceof Error ? error.message : 'LifePilot could not answer your question. Please try again.');
+  } finally {
+    $('aiLoadingOverlay').style.display = 'none';
+    $('askLifePilotBtn').disabled = false;
+  }
+}
+
+function addAIRecommendationsToPlanner() {
+  if (!lastAIResponse || !lastAIResponse.recommendedActions.length) return;
+
+  const createdAt = Date.now();
+  AppState.tasks.push(...lastAIResponse.recommendedActions.map((title, index) => ({
+    id: `${createdAt}-${index}`,
+    title,
+    priority: 'medium',
+    dueDate: '',
+    completed: false,
+    createdAt
+  })));
+
+  saveTasks();
+  renderPlannerTasks();
+  $('addActionsBtn').textContent = '✓ Added to My Planner';
+}
+
 function attachPlannerEventHandlers() {
   const addTaskBtn = $('addTaskBtn');
   const taskInput = $('taskInput');
@@ -622,6 +721,44 @@ function attachTabNavigationHandlers() {
 function attachEventHandlers() {
   attachPlannerEventHandlers();
   attachTabNavigationHandlers();
+
+  const askButton = $('askLifePilotBtn');
+  if (askButton) {
+    askButton.addEventListener('click', () => submitAIQuestion());
+  }
+
+  const questionInput = $('aiQuestion');
+  if (questionInput) {
+    questionInput.addEventListener('keydown', (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        submitAIQuestion();
+      }
+    });
+  }
+
+  const retryButton = $('retryBtn');
+  if (retryButton) {
+    retryButton.addEventListener('click', () => submitAIQuestion(lastAIQuestion));
+  }
+
+  const closeErrorButton = $('closeErrorBtn');
+  if (closeErrorButton) {
+    closeErrorButton.addEventListener('click', () => {
+      $('aiErrorContainer').style.display = 'none';
+    });
+  }
+
+  const closeResponseButton = $('closeResponseBtn');
+  if (closeResponseButton) {
+    closeResponseButton.addEventListener('click', () => {
+      $('aiResponseContainer').style.display = 'none';
+    });
+  }
+
+  const addActionsButton = $('addActionsBtn');
+  if (addActionsButton) {
+    addActionsButton.addEventListener('click', addAIRecommendationsToPlanner);
+  }
 
   const submitBtn = $('submitBtn');
   if (submitBtn) {
