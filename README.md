@@ -64,6 +64,17 @@ When invoked through an MCP host that supports MCP Apps, the tool automatically 
 
 The UI uses the official MCP Apps SDK (`@modelcontextprotocol/ext-apps`) with PostMessageTransport for secure iframe communication.
 
+### Alexa+ MCP Tools
+
+In addition to `generate-plan`, the MCP server exposes a small set of task-management tools intended for Alexa+ and other MCP agents:
+
+- **`generate-plan`** – Turn a request into a structured plan (goal, tasks, next steps, follow-ups, information needed).
+- **`add-task`** – Add a task to LifePilot. Input: `{ task: string, priority?: "low" | "medium" | "high", dueDate?: string }`.
+- **`list-tasks`** – Return the current LifePilot task list as structured JSON.
+- **`complete-task`** – Mark a LifePilot task complete by id or task text. Input: `{ task: string }`.
+
+**Important limitation:** the standalone web Planner stores tasks in the *browser's* `localStorage` (`lifepilot-planner-tasks`), which server-side MCP tools cannot read or write. `add-task`, `list-tasks`, and `complete-task` operate on a separate, in-memory, server-side task store that lives only for the lifetime of the running MCP server process. This keeps Alexa+/agent task management functional without incorrectly pretending MCP can access browser localStorage; the two task lists are not currently synced.
+
 ## Getting Started
 
 ### Prerequisites
