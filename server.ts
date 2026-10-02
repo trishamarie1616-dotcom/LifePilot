@@ -167,8 +167,10 @@ const RequestAnalyzer = {
     if (details.intent === 'vehicle_repair') {
       details.missingInformation = [
         'Current mileage and maintenance history',
-        'Exact symptoms and when they started',
-        'Whether there are any additional codes or warning lights',
+        ...(details.entities.symptoms ? [] : ['Exact symptoms and when they started']),
+        ...(details.entities.diagnosticCode
+          ? ['Whether there are any additional codes or warning lights']
+          : ['Whether there are any diagnostic codes or warning lights']),
         'Whether the issue happens while idling, accelerating, or under load'
       ];
     }
