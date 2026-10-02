@@ -94,6 +94,34 @@ const RequestAnalyzer = {
       details.entities.diagnosticCode = codeMatch[0].toUpperCase();
     }
 
+    // Extract vehicle symptoms mentioned by the user
+    const vehicleSymptoms: string[] = [];
+
+    if (/limp mode/i.test(cleanRequest)) {
+      vehicleSymptoms.push('enters limp mode');
+    }
+
+    if (/won'?t shift|not shift|doesn'?t shift|does not shift/i.test(cleanRequest)) {
+      vehicleSymptoms.push('does not shift normally');
+    }
+
+    if (/restart|shut.*off.*turn.*back on|turn.*off.*back on/i.test(cleanRequest)) {
+      vehicleSymptoms.push('temporarily improves after restarting');
+    }
+
+    if (/jerk|jerking|shudder|shuddering/i.test(cleanRequest)) {
+      vehicleSymptoms.push('jerking or shuddering');
+    }
+
+    if (/slip|slipping/i.test(cleanRequest)) {
+      vehicleSymptoms.push('possible slipping');
+    }
+
+    if (vehicleSymptoms.length) {
+      details.entities.symptoms = vehicleSymptoms.join(', ');
+      details.context.push(`Reported symptoms: ${vehicleSymptoms.join(', ')}`);
+    }
+
     // Detect vehicle repair intent
     if (
       /(limp mode|warning light|transmission|engine|diagnostic code|vehicle|car|repair|mechanic|check engine)/i.test(
@@ -207,8 +235,8 @@ const MockAIGenerator = {
           analysis.entities.diagnosticCode
             ? `Diagnostic code identified: ${analysis.entities.diagnosticCode}`
             : 'No diagnostic code was explicitly provided',
-          /limp mode/i.test(request)
-            ? 'Vehicle is entering limp mode, which indicates a drivetrain or transmission-related concern.'
+          analysis.entities.symptoms
+            ? `Reported symptoms: ${analysis.entities.symptoms}.`
             : 'The request indicates a vehicle issue that needs targeted diagnosis.'
         ].join(' '),
         tasks: [
