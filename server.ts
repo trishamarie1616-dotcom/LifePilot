@@ -225,11 +225,13 @@ const MockAIGenerator = {
         .join(' ');
       const vehicleText = vehicleLabel || 'your vehicle';
       const codeText = analysis.entities.diagnosticCode
-        ? ` and diagnostic code ${analysis.entities.diagnosticCode}`
+        ? ` ${analysis.entities.diagnosticCode}`
         : '';
 
       return {
-        goal: `Diagnose and address the issue affecting ${vehicleText} without guessing at the root cause.${codeText}`,
+        goal: analysis.entities.diagnosticCode
+          ? `Diagnose the cause of${codeText} and the reported issues affecting ${vehicleText}, then identify the appropriate repair.`
+          : `Diagnose the reported issues affecting ${vehicleText} without guessing at the root cause.`,
         context: [
           `Request includes: ${vehicleText}`,
           analysis.entities.diagnosticCode
