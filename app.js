@@ -68,6 +68,34 @@ const RequestAnalyzer = {
       details.entities.diagnosticCode = codeMatch[0].toUpperCase();
     }
 
+    // Extract vehicle symptoms mentioned by the user
+    const vehicleSymptoms = [];
+
+    if (/limp mode/i.test(cleanRequest)) {
+      vehicleSymptoms.push('enters limp mode');
+    }
+
+    if (/won'?t shift|not shift|doesn'?t shift|does not shift/i.test(cleanRequest)) {
+      vehicleSymptoms.push('does not shift normally');
+    }
+
+    if (/restart|shut.*off.*turn.*back on|turn.*off.*back on/i.test(cleanRequest)) {
+      vehicleSymptoms.push('temporarily improves after restarting');
+    }
+
+    if (/jerk|jerking|shudder|shuddering/i.test(cleanRequest)) {
+      vehicleSymptoms.push('jerking or shuddering');
+    }
+
+    if (/slip|slipping/i.test(cleanRequest)) {
+      vehicleSymptoms.push('possible slipping');
+    }
+
+    if (vehicleSymptoms.length) {
+      details.entities.symptoms = vehicleSymptoms.join(', ');
+      details.context.push(`Reported symptoms: ${vehicleSymptoms.join(', ')}`);
+    }
+
     // Detect vehicle repair intent
     if (/(limp mode|warning light|transmission|engine|diagnostic code|vehicle|car|repair|mechanic|check engine)/i.test(cleanRequest)) {
       details.intent = 'vehicle_repair';
@@ -101,8 +129,10 @@ const RequestAnalyzer = {
     if (details.intent === 'vehicle_repair') {
       details.missingInformation = [
         'Current mileage and maintenance history',
-        'Exact symptoms and when they started',
-        'Whether there are any additional codes or warning lights',
+        ...(details.entities.symptoms ? [] : ['Exact symptoms and when they started']),
+        ...(details.entities.diagnosticCode
+          ? ['Whether there are any additional codes or warning lights']
+          : ['Whether there are any diagnostic codes or warning lights']),
         'Whether the issue happens while idling, accelerating, or under load'
       ];
     }
@@ -156,14 +186,20 @@ const MockAIGenerator = {
     if (analysis.intent === 'vehicle_repair') {
       const vehicleLabel = [analysis.entities.year, analysis.entities.make, analysis.entities.model].filter(Boolean).join(' ');
       const vehicleText = vehicleLabel || 'your vehicle';
-      const codeText = analysis.entities.diagnosticCode ? ` and diagnostic code ${analysis.entities.diagnosticCode}` : '';
+      const codeText = analysis.entities.diagnosticCode
+        ? ` ${analysis.entities.diagnosticCode}`
+        : '';
 
       return {
-        goal: `Diagnose and address the issue affecting ${vehicleText} without guessing at the root cause.${codeText}`,
+        goal: analysis.entities.diagnosticCode
+          ? `Diagnose the cause of${codeText} and the reported issues affecting ${vehicleText}, then identify the appropriate repair.`
+          : `Diagnose the reported issues affecting ${vehicleText} without guessing at the root cause.`,
         context: [
           `Request includes: ${vehicleText}`,
           analysis.entities.diagnosticCode ? `Diagnostic code identified: ${analysis.entities.diagnosticCode}` : 'No diagnostic code was explicitly provided',
-          /limp mode/i.test(request) ? 'Vehicle is entering limp mode, which indicates a drivetrain or transmission-related concern.' : 'The request indicates a vehicle issue that needs targeted diagnosis.'
+          analysis.entities.symptoms
+            ? `Reported symptoms: ${analysis.entities.symptoms}.`
+            : 'The request indicates a vehicle issue that needs targeted diagnosis.'
         ].join(' '),
         tasks: [
           'Document exactly when the limp mode appears and under what conditions.',
