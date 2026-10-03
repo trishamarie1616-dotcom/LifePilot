@@ -136,7 +136,7 @@ async function generatePlanFromRequest(revising = false) {
         ...(isRevision ? { revision: {
           originalRequest: AppState.currentPlan.originalRequest || AppState.currentPlan.title || '',
           plan: Object.fromEntries(['goal','context','tasks','nextSteps','followups','informationNeeded'].map(key => [key, AppState.currentPlan[key] || (['goal','context'].includes(key) ? '' : [])])),
-          completedTasks: AppState.tasks.filter(task => task.completed && task.planId === AppState.currentPlan.id).map(task => task.title).slice(-100)
+          completedTasks: AppState.tasks.filter(task => task.completed && String(task.planId) === String(AppState.currentPlan.id)).map(task => task.title).slice(-100)
         } } : {})
       })
     });
@@ -242,7 +242,7 @@ function saveTasks() {
 }
 
 async function syncTasks() {
-  if (syncingTasks) return;
+  if (syncingTasks || !pendingTaskChanges.length) return;
   syncingTasks = true;
   try {
     while (pendingTaskChanges.length) {
@@ -315,7 +315,7 @@ function sortTasks(tasks) {
     if (aDue !== null && bDue === null) return -1;
     if (aDue !== null && bDue !== null && aDue !== bDue) return aDue - bDue;
 
-    return (b.createdAt || 0) - (a.createdAt || 0);
+    return (a.createdAt || 0) - (b.createdAt || 0);
   });
 }
 

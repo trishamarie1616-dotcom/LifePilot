@@ -49,7 +49,7 @@ try {
   await page.locator('#planInformation').filter({ hasText: 'How far is your commute?' }).waitFor();
   await page.locator('#addPlanTasksBtn').click();
   await page.waitForFunction(async () => (await (await fetch('/api/tasks')).json()).tasks.length === 2);
-  await page.locator('#tasksList .task-checkbox').first().check();
+  await page.locator('#tasksList .task-item').filter({ hasText: 'Call a mechanic' }).locator('.task-checkbox').check();
   await page.waitForFunction(async () => (await (await fetch('/api/tasks')).json()).tasks.some(task => task.task === 'Call a mechanic' && task.completed));
   assert.equal(await page.locator('#progressCount').innerText(), '1 of 2 completed');
   await page.locator('#savePlanBtn').click();
