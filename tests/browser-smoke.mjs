@@ -10,7 +10,7 @@ const taskFile = path.join(directory, 'tasks.json');
 const port = 3107;
 let server;
 const start = () => {
-  server = spawn(process.execPath, ['dist/main.js'], { env: { ...process.env, PORT: String(port), LIFEPILOT_TASK_FILE: taskFile }, stdio: 'inherit' });
+  server = spawn(process.execPath, ['dist/main.js'], { env: { ...process.env, PORT: String(port), LIFEPILOT_TASK_FILE: taskFile, OPENAI_API_KEY: '' }, stdio: 'inherit' });
 };
 const stop = async () => {
   if (server.exitCode !== null) return;
@@ -93,6 +93,36 @@ try {
   await page.reload();
   await page.locator('#taskSyncStatus').filter({ hasText: 'Tasks synced' }).waitFor();
   assert.equal(await page.locator('#tasksList .completed').count(), 2);
+  const oversizedParserProbe = { name: 'large.pdf', mimeType: 'application/pdf', dataUrl: 'data:application/pdf;base64,' + Buffer.from('%PDF-' + ' '.repeat(150000)).toString('base64') };
+  const accepted = await fetch(`http://localhost:${port}/api/ask`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ question:'Explain this file', attachments:[oversizedParserProbe] }) });
+  assert.equal(accepted.status, 503, 'Valid uploads over 100 KB must reach key validation');
+  let attachmentsSeen = false;
+  await page.route('**/api/ask', async route => {
+    const input = route.request().postDataJSON();
+    assert.equal(input.attachments.length, 2);
+    assert.equal(input.attachments[0].mimeType, 'image/png');
+    assert.equal(input.attachments[1].name, 'quote.pdf');
+    assert.ok(input.attachments[1].dataUrl.startsWith('data:application/pdf;base64,'));
+    attachmentsSeen = true;
+    await route.fulfill({ json: { answer:'The quote lists a repair estimate.', explanation:'Confirm the scope before approving.', uncertainties:[], recommendedActions:['Ask for an itemized quote'], followUpQuestions:[] } });
+  });
+  await page.getByRole('button', { name:'AI Assistant' }).click();
+  await page.locator('#fileUpload').setInputFiles({ name:'notes.docx', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', buffer:Buffer.from('unsupported') });
+  await page.locator('#attachmentStatus').filter({ hasText:'Export other documents as PDF' }).waitFor();
+  const photo = { name:'photo.png', mimeType:'image/png', buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', 'base64') };
+  const pdf = { name:'quote.pdf', mimeType:'application/pdf', buffer:Buffer.from('%PDF-1.4\nexample') };
+  await page.locator('#fileUpload').setInputFiles([photo,pdf]);
+  await page.locator('#attachmentStatus').filter({ hasText:'Ready.' }).waitFor();
+  assert.equal(await page.locator('#attachmentList li').count(), 2);
+  await page.getByRole('button', { name:'Remove quote.pdf', exact:true }).click();
+  assert.equal(await page.locator('#attachmentList li').count(), 1);
+  await page.locator('#fileUpload').setInputFiles(pdf);
+  await page.locator('#attachmentStatus').filter({ hasText:'Ready.' }).waitFor();
+  await page.locator('#aiQuestion').fill('What does this repair quote say?');
+  await page.locator('#askLifePilotBtn').click();
+  await page.locator('#aiAnswer').filter({ hasText:'The quote lists a repair estimate.' }).waitFor();
+  assert.equal(attachmentsSeen, true);
+  await page.screenshot({ path:'artifacts/attachments-mobile.png',fullPage:true });
   assert.deepEqual(errors, []);
   console.log('Browser workflow, revisions, duplicate prevention, mobile overflow, restart persistence and MCP sync passed.');
 } finally {

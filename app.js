@@ -15,6 +15,9 @@ const AppState = {
 
 let lastAIQuestion = '';
 let lastAIResponse = null;
+let selectedAttachments = [];
+let isReadingAttachments = false;
+let isSubmittingQuestion = false;
 
 const PRIORITY_RANK = {
   high: 0,
@@ -452,8 +455,61 @@ function showAIError(message) {
   $('aiErrorContainer').style.display = 'block';
 }
 
+function renderAttachments() {
+  const list = $('attachmentList');
+  list.replaceChildren(...selectedAttachments.map((file, index) => {
+    const item = document.createElement('li');
+    if (file.mimeType.startsWith('image/')) {
+      const image = document.createElement('img');
+      image.src = file.dataUrl; image.alt = `Preview of ${file.name}`; item.append(image);
+    }
+    const name = document.createElement('span'); name.textContent = file.name; item.append(name);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'attachment-remove';
+    remove.textContent = 'Remove'; remove.setAttribute('aria-label', `Remove ${file.name}`);
+    remove.disabled = isReadingAttachments || isSubmittingQuestion;
+    remove.addEventListener('click', () => { selectedAttachments.splice(index, 1); renderAttachments(); });
+    item.append(remove); return item;
+  }));
+  $('fileUpload').disabled = isReadingAttachments || isSubmittingQuestion;
+  $('askLifePilotBtn').disabled = isReadingAttachments || isSubmittingQuestion;
+}
+
+async function readAttachments(event) {
+  const files = [...event.target.files];
+  const types = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
+  isReadingAttachments = true; renderAttachments();
+  $('attachmentStatus').textContent = 'Preparing attachments…';
+  try {
+    if (selectedAttachments.length + files.length > 3) throw new Error('Choose up to three files. Remove one before adding another.');
+    let total = selectedAttachments.reduce((sum, file) => sum + file.size, 0);
+    const additions = [];
+    for (const file of files) {
+      const mimeType = file.type || types[file.name.split('.').pop().toLowerCase()];
+      if (!Object.values(types).includes(mimeType)) throw new Error('Choose JPG, PNG, WebP photos or PDFs. Export other documents as PDF first.');
+      if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Each file must be nonempty and 5 MB or smaller.');
+      if (file.name.length > 160) throw new Error('Shorten the filename to 160 characters or fewer.');
+      total += file.size;
+      if (total > 10 * 1024 * 1024) throw new Error('Keep the combined files under 10 MB.');
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read that file. Please select it again.'));
+        reader.readAsDataURL(file);
+      });
+      additions.push({ name: file.name, mimeType, dataUrl: `data:${mimeType};base64,${dataUrl.split(',')[1]}`, size: file.size });
+    }
+    selectedAttachments.push(...additions);
+    $('attachmentStatus').textContent = 'Ready. Add a question, or ask LifePilot to explain the files.';
+  } catch (error) {
+    $('attachmentStatus').textContent = error instanceof Error ? error.message : 'Could not attach the files.';
+  } finally {
+    event.target.value = ''; isReadingAttachments = false; renderAttachments();
+  }
+}
+
 async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
-  const cleanQuestion = question.trim();
+  if (isReadingAttachments || isSubmittingQuestion) return;
+  const cleanQuestion = question.trim() || (selectedAttachments.length ? 'Help me understand these attachments and recommend practical next steps.' : '');
   if (!cleanQuestion) {
     $('aiQuestion').focus();
     return;
@@ -464,14 +520,15 @@ async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
   $('aiErrorContainer').style.display = 'none';
   $('aiResponseContainer').style.display = 'none';
   $('aiLoadingOverlay').style.display = 'grid';
-  $('askLifePilotBtn').disabled = true;
+  isSubmittingQuestion = true;
+  renderAttachments();
 
   try {
     const response = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(35000),
-      body: JSON.stringify({ question: cleanQuestion })
+      body: JSON.stringify({ question: cleanQuestion, attachments: selectedAttachments.map(({name, mimeType, dataUrl}) => ({name, mimeType, dataUrl})) })
     });
     const result = await response.json().catch(() => null);
     if (!response.ok) {
@@ -499,7 +556,8 @@ async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
     showAIError(error instanceof Error ? error.message : 'LifePilot could not answer your question. Please try again.');
   } finally {
     $('aiLoadingOverlay').style.display = 'none';
-    $('askLifePilotBtn').disabled = false;
+    isSubmittingQuestion = false;
+    renderAttachments();
   }
 }
 
@@ -570,6 +628,7 @@ function attachTabNavigationHandlers() {
 function attachEventHandlers() {
   attachPlannerEventHandlers();
   attachTabNavigationHandlers();
+  $('fileUpload').addEventListener('change', readAttachments);
   $('addPlanTasksBtn').addEventListener('click', addSelectedPlanTasks);
   $('revisePlanBtn').addEventListener('click', () => generatePlanFromRequest(true));
 

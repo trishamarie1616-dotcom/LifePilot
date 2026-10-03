@@ -17,7 +17,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import cors from 'cors';
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './server.js';
@@ -31,7 +31,7 @@ import { taskStore, syncTaskChanges, taskChangesSchema } from './task-store.js';
 async function startStreamableHTTPServer(createServerFn: () => McpServer): Promise<void> {
   const port = parseInt(process.env.PORT ?? '3001', 10);
 
-  const app = createMcpExpressApp({ host: '0.0.0.0' });
+  const app = createMcpExpressApp({ host: '0.0.0.0', jsonLimit: '15mb' });
   app.use(cors());
 
   const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -44,11 +44,11 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
     ['/api/ask', 'question', answerQuestion],
     ['/api/plan', 'request', generatePlan]
   ] as const) {
-    app.post(route, express.json({ limit: '32kb' }), async (req: Request, res: Response) => {
+    app.post(route, express.json({ limit: route === '/api/ask' ? '15mb' : '32kb' }), async (req: Request, res: Response) => {
       try {
         res.json(route === '/api/plan'
           ? await generatePlan(req.body?.request, req.body?.revision)
-          : await generate(req.body?.[field]));
+          : await generate(req.body?.[field], req.body?.attachments));
       } catch (error) {
         const failure = error instanceof AIError
           ? error : new AIError(502, 'The AI provider could not complete the request. Try again.');
@@ -91,6 +91,11 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
         });
       }
     }
+  });
+
+  app.use((error: { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
+    const status = error.status === 413 ? 413 : error.status === 400 ? 400 : 500;
+    res.status(status).json({ error: status === 413 ? 'The upload is too large. Keep files under 10 MB combined.' : status === 400 ? 'The request could not be read. Please try again.' : 'The server could not complete the request. Please try again.' });
   });
 
   const httpServer = app.listen(port, (err) => {

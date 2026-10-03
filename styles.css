@@ -772,3 +772,12 @@ summary {
   }
 }
 
+.attachment-section { margin: 4px 0 20px; }
+.attachment-picker { display: block; color: var(--purple); }
+.attachment-picker input { display: block; width: 100%; margin-top: 10px; font-size: .82rem; }
+.attachment-picker input::file-selector-button { border: 0; background: #f0ecf8; color: var(--purple-dark); border-radius: 8px; padding: 8px 12px; margin-right: 10px; cursor: pointer; }
+.attachment-list { list-style: none; padding: 0; }
+.attachment-list li { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.attachment-list img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; }
+.attachment-list span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .82rem; }
+.attachment-remove { background: #f0ecf8; color: var(--purple-dark); padding: 8px; border-radius: 8px; }

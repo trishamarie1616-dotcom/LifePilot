@@ -87,3 +87,33 @@ test('plan revisions carry original constraints and completed work', async () =>
     if (savedKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = savedKey;
   }
 });
+
+test('photo and PDF inputs reach the provider as actual multimodal content', async () => {
+  const savedFetch = globalThis.fetch;
+  const savedKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'test-only';
+  try {
+    const image = { name: 'photo.png', mimeType: 'image/png', dataUrl: 'data:image/png;base64,' + Buffer.from('89504e470d0a1a0a', 'hex').toString('base64') };
+    const pdf = { name: 'quote.pdf', mimeType: 'application/pdf', dataUrl: 'data:application/pdf;base64,' + Buffer.from('%PDF-1.4\nexample').toString('base64') };
+    globalThis.fetch = async (_, init) => {
+      const body = JSON.parse(init.body);
+      const content = body.messages.at(-1).content;
+      assert.equal(content[0].text, 'Explain my quote and photo');
+      assert.equal(content.find(part => part.type === 'image_url').image_url.url, image.dataUrl);
+      assert.deepEqual(content.find(part => part.type === 'file').file, { filename: 'quote.pdf', file_data: pdf.dataUrl });
+      return reply({ answer: 'Example', explanation: '', uncertainties: [], recommendedActions: [], followUpQuestions: [] });
+    };
+    await answerQuestion('Explain my quote and photo', [image, pdf]);
+    globalThis.fetch = async () => { assert.fail('Invalid attachment must not reach the provider'); };
+    for (const files of [
+      [{ ...image, dataUrl: 'https://example.com/photo.png' }],
+      [{ ...image, mimeType: 'application/msword' }],
+      [{ ...image, dataUrl: 'data:image/png;base64,' + Buffer.from('not a PNG').toString('base64') }],
+      [image, image, image, image],
+      [{ ...pdf, dataUrl: 'data:application/pdf;base64,' + Buffer.from('%PDF-' + 'x'.repeat(5 * 1024 * 1024)).toString('base64') }]
+    ]) await assert.rejects(answerQuestion('Explain', files), error => error.status === 400);
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = savedKey;
+  }
+});

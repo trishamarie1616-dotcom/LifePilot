@@ -5,6 +5,7 @@ LifePilot turns an overwhelming situation into a practical plan, a small next ac
 ## What works
 
 - Real server-side OpenAI answers and structured plans.
+- In Ask LifePilot, attach JPG, PNG, WebP photos or PDFs for analysis. Up to three files, 5 MB each and 10 MB combined. Attachments are sent to OpenAI only when you submit, kept in memory rather than stored by LifePilot, and can be removed before sending. Export Word documents as PDF first.
 - Select individual plan tasks to add to your planner.
 - Answer missing-detail questions or revise a plan when your budget, schedule, or circumstances change.
 - Revisions include your original goal, previous plan, and completed tasks associated with that plan.
