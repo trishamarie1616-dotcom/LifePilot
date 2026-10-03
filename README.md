@@ -6,16 +6,16 @@
 
 LifePilot consists of three integrated components:
 
-1. **Standalone Web App** – A static GitHub Pages application with localStorage
+1. **Web App** – Browser UI with localStorage, served by the Node server for real AI
 2. **MCP Server** – Exposes LifePilot planning as an MCP tool with Streamable HTTP support
 3. **MCP App UI** – An interactive UI resource that renders plans in MCP-compatible hosts
 
 ## Standalone Web App
 
-The original LifePilot application runs as a static web app on GitHub Pages. No backend required.
+Real AI answers and plans require the Node backend. GitHub Pages can serve the interface but cannot run `/api/ask` or `/api/plan`. Open the app from the running server for AI features.
 
 **Usage:**
-- Open `index.html` in a browser
+- Open `http://localhost:3001` after starting the server
 - Enter a request (e.g., "My 2014 Nissan Sentra keeps going into limp mode and I'm getting code P0965")
 - Click "Generate Plan" or press Ctrl+Enter
 - Plans are saved to browser localStorage
@@ -30,7 +30,7 @@ The original LifePilot application runs as a static web app on GitHub Pages. No 
 
 **Files:**
 - `index.html` – Main page (GitHub Pages compatible)
-- `app.js` – Planning engine (RequestAnalyzer, MockAIGenerator, UI handlers)
+- `app.js` – UI handlers and calls to the AI backend
 - `styles.css` – Styling
 
 ## MCP Apps Integration
@@ -217,11 +217,17 @@ I need to find a new job but I'm overwhelmed and don't know where to start.
 
 ### Shared Planning Engine
 
-The core planning logic (`RequestAnalyzer`, `MockAIGenerator`) is implemented in:
-- `app.js` – Used by the standalone web app
-- `server.ts` – Replicated for MCP server (same logic, no dependencies)
+`ai.ts` validates input, calls OpenAI with strict structured output, and validates the returned answer or plan. The browser uses `/api/ask` and `/api/plan`; the MCP `generate-plan` tool calls the same module. Errors are shown explicitly rather than replaced with canned plans.
 
-Both implementations produce identical plans from the same request.
+### Configure real AI
+
+Set `OPENAI_API_KEY` only in the server environment. Never put it in browser JavaScript, commit it, or paste it into chat. `OPENAI_MODEL` is optional and defaults to the existing `gpt-4.1-mini` setting.
+
+Install dependencies, run `npm run build`, then `npm run mcp:start`. Open `http://localhost:3001` (or your server's HTTPS address). A missing key produces a configuration error. Invalid keys, billing limits, refusals, and malformed provider responses produce explicit errors. API usage requires a provider account with available quota.
+
+The model has no browsing or action tools; generated advice is not a live lookup and does not execute tasks. Existing saved plans and browser tasks remain in localStorage.
+
+Run `npm test` to build and run deterministic provider-contract tests without using a real key or incurring API charges.
 
 ### MCP App Communication
 
@@ -354,7 +360,7 @@ MIT
 
 ## Future Integration Points
 
-- **AWS Bedrock:** Replace `MockAIGenerator.generate()` with real AI model calls
+- **AWS Bedrock:** Add another provider to the shared `ai.ts` module
 - **Alexa+ Skill:** Register LifePilot as a native Alexa skill
 - **Multi-turn Conversation:** Support follow-up refinements within MCP context
 - **Database:** Persistent plan storage (instead of localStorage)
