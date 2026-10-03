@@ -85,6 +85,9 @@ try {
     const text = await response.text();
     return text.startsWith('{') ? JSON.parse(text) : JSON.parse(text.split('\n').find(line => line.startsWith('data: ')).slice(6));
   };
+  const initialized = await mcp({ jsonrpc:'2.0', id:0, method:'initialize', params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'LifePilot contest verification',version:'1.0.0'}} });
+  assert.equal(initialized.result.protocolVersion, '2025-11-25');
+  assert.ok(initialized.result.capabilities.tools);
   const tools = await mcp({ jsonrpc:'2.0', id:1, method:'tools/list', params:{} });
   assert.ok(tools.result.tools.some(tool => tool.name === 'generate-plan'));
   const listed = await mcp({ jsonrpc:'2.0', id:2, method:'tools/call', params:{name:'list-tasks',arguments:{}} });
@@ -130,3 +133,4 @@ try {
   if (server) await stop();
   fs.rmSync(directory, { recursive: true, force: true });
 }
+
