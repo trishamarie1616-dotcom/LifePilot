@@ -1,9 +1,9 @@
 :root {
   --purple:#6443c9;
   --purple-dark:#4e32a2;
-  --teal:#147969;
+  --teal:#116c5c;
   --ink:#282336;
-  --muted:#706a7e;
+  --muted:#625b70;
   --line:#e8e3ee;
   --surface:#fff;
   --soft:#f7f5fb;
@@ -788,3 +788,21 @@ summary {
 .shortcut-docs {background:#e5efff;color:#174781;} .shortcut-photos {background:#ffe6ef;color:#8d2250;} .shortcut-ai {background:#eee3ff;color:#592690;} .shortcut-planner {background:#dcf5e9;color:#16583e;}
 .feature-shortcut:hover {filter:brightness(.96);} .feature-shortcut:focus-visible {outline:3px solid #6540a4;outline-offset:3px;}
 @media(max-width:640px){.feature-shortcuts {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;} .feature-shortcut {font-size:.85rem;}}
+
+/* Accessible controls preserve LifePilot's colorful identity. */
+button, select, input:not([type="checkbox"]), summary { min-height:48px; }
+button { min-width:48px; }
+button:focus-visible,a:focus-visible,summary:focus-visible,input:focus,textarea:focus,select:focus { outline-color:#4e32a2; }
+summary { display:flex; align-items:center; }
+.plan-task-options label { min-height:48px; align-items:center; }
+input[type="checkbox"] { width:48px; height:48px; margin:0; cursor:pointer; flex-shrink:0; }
+.task-item { align-items:center; }
+.attachment-picker input::file-selector-button { min-height:48px; }
+.skip-link { position:absolute; left:16px; top:-100px; z-index:200; background:#fff; padding:14px; border:2px solid var(--purple); border-radius:8px; }
+.skip-link:focus { top:12px; }
+.connection-banner { display:flex; align-items:center; justify-content:space-between; gap:20px; border:1px solid #b8d9ca; background:#edf8f2; color:#16583e; border-radius:14px; padding:16px 20px; margin:22px 0 18px; }
+.connection-banner p { margin:5px 0 0; font-size:.9rem; }
+.connection-banner[data-state="offline"] { background:#fff3df; border-color:#e2c491; color:#694312; }
+.connection-banner button { flex-shrink:0; }
+@media(max-width:640px){.connection-banner { align-items:stretch; flex-direction:column; gap:12px; } }
+

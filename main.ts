@@ -57,6 +57,11 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
     });
   }
 
+  app.get('/api/status', (_req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ service: 'lifepilot', aiConfigured: Boolean(process.env.OPENAI_API_KEY) });
+  });
+
   app.get('/api/tasks', (_req: Request, res: Response) => res.json({ tasks: taskStore }));
   app.post('/api/tasks/sync', express.json({ limit: '1mb' }), (req: Request, res: Response) => {
     if (!taskChangesSchema.safeParse(req.body).success) {
@@ -137,3 +142,4 @@ main().catch((e) => {
   console.error('Fatal error:', e);
   process.exit(1);
 });
+

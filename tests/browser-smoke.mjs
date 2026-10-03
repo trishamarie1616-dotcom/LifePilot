@@ -43,6 +43,18 @@ try {
     } else await route.fulfill({ json: initial });
   });
   await page.goto(`http://localhost:${port}`);
+  await page.getByText('Server connected � AI setup needed', { exact:true }).waitFor();
+  await page.route('**/api/status', route => route.fulfill({status:404, body:'Not found'}));
+  await page.getByRole('button', {name:'Check connection'}).click();
+  await page.getByText('Open your running LifePilot server', {exact:true}).waitFor();
+  await page.unroute('**/api/status');
+  await page.getByRole('button', {name:'Check connection'}).click();
+  await page.getByText('Server connected � AI setup needed', {exact:true}).waitFor();
+  for (const button of await page.locator('button:visible').all()) {
+    const box = await button.boundingBox();
+    assert.ok(box.height >= 48 && box.width >= 48, 'Visible buttons meet 48px touch minimum');
+  }
+
   await page.locator('#taskSyncStatus').filter({ hasText: 'Tasks synced' }).waitFor();
   await page.locator('#userInput').fill('My car broke down. I have $300 and need to get to work Monday.');
   await page.locator('#submitBtn').click();
@@ -133,4 +145,5 @@ try {
   if (server) await stop();
   fs.rmSync(directory, { recursive: true, force: true });
 }
+
 

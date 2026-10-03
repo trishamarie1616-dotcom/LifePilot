@@ -424,6 +424,8 @@ function switchTab(tabName) {
 
   document.querySelectorAll('.nav-btn').forEach((button) => {
     button.classList.toggle('nav-btn-active', button.dataset.tab === tabName);
+    if (button.dataset.tab === tabName) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
   });
 }
 
@@ -794,3 +796,24 @@ document.querySelectorAll("[data-feature]").forEach(button => button.addEventLis
   picker.click();
  } else if (feature === "assistant") document.getElementById("aiQuestion").focus();
 }));
+
+async function checkConnection() {
+ const button = $('retryConnectionBtn');
+ button.disabled = true;
+ try {
+  const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error('Unavailable');
+  const status = await response.json();
+  if (status.service !== 'lifepilot') throw new Error('Wrong page');
+  $('connectionTitle').textContent = status.aiConfigured ? 'Connected to LifePilot' : 'Server connected � AI setup needed';
+  $('connectionMessage').textContent = status.aiConfigured ? 'AI is configured. Your tasks sync with this server.' : 'Set OPENAI_API_KEY in your server environment and restart LifePilot. Your saved work is kept.';
+  document.querySelector('.connection-banner').dataset.state = status.aiConfigured ? 'ready' : 'offline';
+ } catch {
+  $('connectionTitle').textContent = 'Open your running LifePilot server';
+  $('connectionMessage').textContent = 'In Codespaces, start LifePilot, then open port 3001 from the Ports tab. This page cannot reach the AI backend. Your saved work is kept.';
+  document.querySelector('.connection-banner').dataset.state = 'offline';
+ } finally { button.disabled = false; }
+}
+$('retryConnectionBtn').addEventListener('click', checkConnection);
+checkConnection();
+
