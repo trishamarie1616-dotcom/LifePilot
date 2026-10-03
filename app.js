@@ -783,3 +783,14 @@ if (document.readyState === 'loading') {
   initializeTaskSync();
   if (AppState.currentPlan) renderPlan(AppState.currentPlan);
 }
+
+
+document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", () => {
+ const feature = button.dataset.feature;
+ switchTab(feature === "planner" ? "planner" : "assistant");
+ if (feature === "documents" || feature === "photos") {
+  const picker = document.getElementById("fileUpload");
+  picker.accept = feature === "documents" ? "application/pdf" : "image/jpeg,image/png,image/webp";
+  picker.click();
+ } else if (feature === "assistant") document.getElementById("aiQuestion").focus();
+}));

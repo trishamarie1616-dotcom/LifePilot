@@ -781,3 +781,10 @@ summary {
 .attachment-list img { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; }
 .attachment-list span { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: .82rem; }
 .attachment-remove { background: #f0ecf8; color: var(--purple-dark); padding: 8px; border-radius: 8px; }
+
+
+.feature-shortcuts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:24px; }
+.feature-shortcut { padding:16px 10px; border:1px solid transparent; border-radius:14px; font:inherit; font-weight:600; cursor:pointer; }
+.shortcut-docs {background:#e5efff;color:#174781;} .shortcut-photos {background:#ffe6ef;color:#8d2250;} .shortcut-ai {background:#eee3ff;color:#592690;} .shortcut-planner {background:#dcf5e9;color:#16583e;}
+.feature-shortcut:hover {filter:brightness(.96);} .feature-shortcut:focus-visible {outline:3px solid #6540a4;outline-offset:3px;}
+@media(max-width:640px){.feature-shortcuts {grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;} .feature-shortcut {font-size:.85rem;}}

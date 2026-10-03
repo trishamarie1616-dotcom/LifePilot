@@ -9,7 +9,7 @@
 <header class="dashboard-header"><a class="logo" href="/" aria-label="LifePilot home"><span class="logo-icon">L</span>LifePilot<span class="wordmark-dot">.</span></a><span class="header-note">Make room for what matters.</span></header>
 <div class="app-container">
 <nav class="bottom-nav" aria-label="Main navigation"><button class="nav-btn nav-btn-active" data-tab="planner" aria-label="My Planner">My planner</button><button class="nav-btn" data-tab="assistant" aria-label="AI Assistant">Ask LifePilot</button></nav>
-<main class="app-main">
+<main class="app-main"><div class="feature-shortcuts" aria-label="LifePilot tools"><button class="feature-shortcut shortcut-docs" data-feature="documents">📄 Upload documents</button><button class="feature-shortcut shortcut-photos" data-feature="photos">📷 Add photos</button><button class="feature-shortcut shortcut-ai" data-feature="assistant">✨ Ask AI</button><button class="feature-shortcut shortcut-planner" data-feature="planner">📋 My planner</button></div>
 <section id="planner-tab" class="tab-content tab-content-active">
 <div class="welcome"><p class="eyebrow">ONE STEP AT A TIME</p><h1>A little less overwhelm.<br>A clear next step.</h1><p>Tell us what’s on your mind. Build a plan that fits your life, then take it one task at a time.</p></div>
 <section class="focus-card" aria-labelledby="focusHeading"><div><p class="eyebrow" id="focusHeading">YOUR NEXT STEP</p><h2 id="nextAction">Start with what’s on your mind.</h2><p id="progressLabel">Your plan and progress will appear here.</p></div><div class="progress-block"><span id="progressCount">0 completed</span><progress id="taskProgress" value="0" max="1" aria-label="Task completion"></progress></div></section>
@@ -26,3 +26,4 @@
 </main><footer class="app-footer">LifePilot · Your next step, made clear. <a href="https://github.com/trishamarie1616-dotcom/LifePilot" target="_blank" rel="noopener noreferrer">View source</a><p>Plans stay in this browser. Tasks sync with your connected LifePilot server. Planning doesn’t book appointments or send reminders.</p></footer>
 </div><div id="loadingOverlay" class="loading-overlay" style="display:none" role="status"><div class="loading-spinner"><div class="spinner"></div><p>Finding a practical next step…</p></div></div><script src="app.js"></script>
 </body></html>
+
