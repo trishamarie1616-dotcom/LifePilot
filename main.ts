@@ -22,6 +22,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from './server.js';
 import { AIError, answerQuestion, generatePlan } from './ai.js';
+import { taskStore, syncTaskChanges, taskChangesSchema } from './task-store.js';
 
 /**
  * Start Streamable HTTP transport server (stateless, per-request)
@@ -43,9 +44,11 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
     ['/api/ask', 'question', answerQuestion],
     ['/api/plan', 'request', generatePlan]
   ] as const) {
-    app.post(route, express.json({ limit: '12kb' }), async (req: Request, res: Response) => {
+    app.post(route, express.json({ limit: '32kb' }), async (req: Request, res: Response) => {
       try {
-        res.json(await generate(req.body?.[field]));
+        res.json(route === '/api/plan'
+          ? await generatePlan(req.body?.request, req.body?.revision)
+          : await generate(req.body?.[field]));
       } catch (error) {
         const failure = error instanceof AIError
           ? error : new AIError(502, 'The AI provider could not complete the request. Try again.');
@@ -53,6 +56,15 @@ async function startStreamableHTTPServer(createServerFn: () => McpServer): Promi
       }
     });
   }
+
+  app.get('/api/tasks', (_req: Request, res: Response) => res.json({ tasks: taskStore }));
+  app.post('/api/tasks/sync', express.json({ limit: '1mb' }), (req: Request, res: Response) => {
+    if (!taskChangesSchema.safeParse(req.body).success) {
+      res.status(400).json({ error: 'Invalid task changes.' }); return;
+    }
+    try { res.json({ tasks: syncTaskChanges(req.body) }); }
+    catch { res.status(500).json({ error: 'Could not save tasks on the server. Your browser copy is kept.' }); }
+  });
 
   // MCP endpoint: POST /mcp
   app.all('/mcp', async (req: Request, res: Response) => {

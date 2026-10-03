@@ -24,43 +24,14 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import { generatePlan, planSchema } from './ai.js';
+import { taskStore, addStoredTask, completeStoredTask } from './task-store.js';
+import { generatePlan, planSchema, revisionSchema } from './ai.js';
 
 // Determine dist directory (works from both source .ts and compiled .js)
 const SERVER_FILE = fileURLToPath(import.meta.url);
 const DIST_DIR = SERVER_FILE.endsWith('.ts')
   ? path.join(path.dirname(SERVER_FILE), 'dist')
   : path.dirname(SERVER_FILE);
-
-// ============================================================================
-// SERVER-SIDE TASK STORE (for MCP tools)
-// ============================================================================
-// NOTE: The standalone web Planner persists tasks in the *browser's*
-// localStorage (key "lifepilot-planner-tasks"), which is only reachable from
-// client-side JavaScript. Server-side MCP tools (used by Alexa+ and other MCP
-// hosts) cannot read or write browser localStorage. To give Alexa+ a working
-// task list without pretending otherwise, we keep a small in-memory task
-// store here that mirrors the same task shape used by the web Planner
-// (text, priority, dueDate, completed). This store is intentionally separate
-// from browser localStorage and is scoped to the running server process; it
-// resets on restart and is not currently synced with the web UI.
-type TaskPriority = 'low' | 'medium' | 'high';
-
-interface StoredTask {
-  id: string;
-  task: string;
-  priority: TaskPriority;
-  dueDate: string | null;
-  completed: boolean;
-  createdAt: string;
-}
-
-const taskStore: StoredTask[] = [];
-let nextTaskId = 1;
-
-function createTaskId(): string {
-  return `task-${nextTaskId++}`;
-}
 
 // ============================================================================
 // MCP SERVER CREATION
@@ -82,14 +53,15 @@ export function createServer(): McpServer {
       title: 'Generate Plan',
       description: 'Turn a request into a structured plan with tasks, next steps, and follow-ups.',
       inputSchema: z.object({
-        request: z.string().trim().min(1).max(1000).describe('The user request or goal to plan for')
+        request: z.string().trim().min(1).max(1000).describe('The request, or latest update when revising a plan'),
+        revision: revisionSchema.optional().describe('Previous plan, original request and completed tasks for a contextual revision')
       }),
       outputSchema: planSchema,
       _meta: { ui: { resourceUri } } // Link tool to UI resource
     },
-    async ({ request }): Promise<CallToolResult> => {
+    async ({ request, revision }): Promise<CallToolResult> => {
       try {
-        const plan = await generatePlan(request);
+        const plan = await generatePlan(request, revision);
 
         // Text fallback for non-UI clients
         const textFallback = `
@@ -175,14 +147,14 @@ ${plan.informationNeeded.map((i) => `- ${i}`).join('\n')}
     {
       title: 'Add LifePilot Task',
       description:
-        'Add a task to LifePilot (e.g. from Alexa+ or another agent). Stores the task in the server-side task list used by MCP tools.',
+        'Add a task to LifePilot (e.g. from Alexa+ or another agent). Stores the task in the shared persistent task list used by the browser and MCP tools.',
       inputSchema: z.object({
-        task: z.string().min(1).describe('The task text to add'),
+        task: z.string().trim().min(1).max(1500).describe('The task text to add'),
         priority: z
           .enum(['low', 'medium', 'high'])
           .optional()
           .describe('Optional priority for the task (defaults to "medium")'),
-        dueDate: z.string().optional().describe('Optional due date for the task, as free-form text')
+        dueDate: z.string().max(100).optional().describe('Optional due date for the task, as free-form text')
       }),
       outputSchema: z.object({
         added: z.boolean(),
@@ -197,15 +169,9 @@ ${plan.informationNeeded.map((i) => `- ${i}`).join('\n')}
     },
     async ({ task, priority, dueDate }): Promise<CallToolResult> => {
       try {
-        const stored: StoredTask = {
-          id: createTaskId(),
-          task: task.trim(),
-          priority: priority ?? 'medium',
-          dueDate: dueDate?.trim() || null,
-          completed: false,
-          createdAt: new Date().toISOString()
-        };
-        taskStore.push(stored);
+        const stored = addStoredTask({
+          task: task.trim(), priority: priority ?? 'medium', dueDate: dueDate?.trim() || null
+        });
 
         const output = {
           added: true,
@@ -248,7 +214,7 @@ ${plan.informationNeeded.map((i) => `- ${i}`).join('\n')}
     {
       title: 'List LifePilot Tasks',
       description:
-        'Return the current LifePilot task list from the server-side task store used by MCP tools (e.g. for Alexa+).',
+        'Return the current LifePilot task list shared with the browser and other MCP tools (e.g. for Alexa+).',
       inputSchema: z.object({}),
       outputSchema: z.object({
         tasks: z.array(
@@ -330,9 +296,7 @@ ${plan.informationNeeded.map((i) => `- ${i}`).join('\n')}
     async ({ task }): Promise<CallToolResult> => {
       try {
         const identifier = task.trim().toLowerCase();
-        const found = taskStore.find(
-          (t) => t.id.toLowerCase() === identifier || t.task.toLowerCase() === identifier
-        );
+        const found = completeStoredTask(identifier);
 
         if (!found) {
           const output = { completed: false, task: null, message: `No matching task found for "${task}".` };
@@ -342,7 +306,6 @@ ${plan.informationNeeded.map((i) => `- ${i}`).join('\n')}
           };
         }
 
-        found.completed = true;
         const output = {
           completed: true,
           task: {

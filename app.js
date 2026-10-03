@@ -10,7 +10,7 @@ function parseStoredJSON(key, fallback) {
 const AppState = {
   plans: parseStoredJSON('lifepilot-plans', []),
   tasks: parseStoredJSON('lifepilot-planner-tasks', []),
-  currentPlan: null
+  currentPlan: parseStoredJSON('lifepilot-current-plan', null)
 };
 
 let lastAIQuestion = '';
@@ -30,14 +30,17 @@ function renderPlan(plan) {
 
   const goalEl = $('planGoal');
   if (goalEl) {
-    const details = [plan.goal, plan.context].filter(Boolean).join(' ');
-    goalEl.textContent = details;
+    goalEl.textContent = plan.goal;
+    $('planContext').textContent = plan.context;
   }
 
   const tasksEl = $('planTasks');
   if (tasksEl) {
     tasksEl.innerHTML = (plan.tasks || [])
-      .map((task) => `<li>${escapeHTML(task)}</li>`)
+      .map((task, index) => {
+        const added = AppState.tasks.some(saved => normalizeTask(saved.title) === normalizeTask(task));
+        return `<li><label><input type="checkbox" data-plan-task="${index}" ${added ? 'disabled' : 'checked'}><span>${escapeHTML(task)}${added ? ' <small>(already in planner)</small>' : ''}</span></label></li>`;
+      })
       .join('');
   }
 
@@ -55,6 +58,11 @@ function renderPlan(plan) {
       .join('');
   }
 
+  renderAIList($('planInformation'), plan.informationNeeded || []);
+  $('informationSection').hidden = !(plan.informationNeeded || []).length;
+  $('planUpdate').value = '';
+  $('planNotice').textContent = '';
+  renderDashboard();
   const container = $('currentPlanContainer');
   if (container) {
     container.style.display = 'block';
@@ -102,16 +110,20 @@ function escapeHTML(value) {
   }[char]));
 }
 
-async function generatePlanFromRequest() {
-  const request = input.value.trim();
+async function generatePlanFromRequest(revising = false) {
+  const isRevision = revising === true;
+  const request = isRevision ? $('planUpdate').value.trim() : input.value.trim();
+  if (isRevision && !AppState.currentPlan) return;
   if (!request) {
-    input.focus();
+    (isRevision ? $('planUpdate') : input).focus();
     return;
   }
 
   const button = $('submitBtn');
   if (button?.disabled) return;
   if (button) button.disabled = true;
+  $('revisePlanBtn').disabled = true;
+  $('planError').hidden = true;
   const overlay = $('loadingOverlay');
   if (overlay) {
     overlay.style.display = 'grid';
@@ -120,7 +132,13 @@ async function generatePlanFromRequest() {
   try {
     const response = await fetch('/api/plan', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(35000), body: JSON.stringify({ request })
+      signal: AbortSignal.timeout(35000), body: JSON.stringify({ request,
+        ...(isRevision ? { revision: {
+          originalRequest: AppState.currentPlan.originalRequest || AppState.currentPlan.title || '',
+          plan: Object.fromEntries(['goal','context','tasks','nextSteps','followups','informationNeeded'].map(key => [key, AppState.currentPlan[key] || (['goal','context'].includes(key) ? '' : [])])),
+          completedTasks: AppState.tasks.filter(task => task.completed && task.planId === AppState.currentPlan.id).map(task => task.title).slice(-100)
+        } } : {})
+      })
     });
     const plan = await response.json().catch(() => null);
     if (!response.ok) throw new Error(plan?.error || 'Open LifePilot from its running AI server to generate a plan.');
@@ -129,23 +147,34 @@ async function generatePlanFromRequest() {
         Array.isArray(plan[key]) && plan[key].every(item => typeof item === 'string'))) {
       throw new Error('LifePilot received an invalid plan. Please try again.');
     }
+    const previous = isRevision ? AppState.currentPlan : null;
     AppState.currentPlan = {
-      ...plan,
-      title: request,
-      createdAt: new Date().toISOString()
+      ...previous, ...plan,
+      id: previous?.id || crypto.randomUUID(),
+      originalRequest: previous?.originalRequest || previous?.title || request,
+      title: previous?.title || request,
+      createdAt: previous?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
+    localStorage.setItem('lifepilot-current-plan', JSON.stringify(AppState.currentPlan));
+    if (previous && AppState.plans.some(saved => saved.id === previous.id)) {
+      saveCurrentPlan();
+    }
 
     renderPlan(AppState.currentPlan);
 
     const saveBtn = $('savePlanBtn');
     if (saveBtn) {
-      saveBtn.textContent = '💾 Save This Plan';
+      saveBtn.textContent = 'Save plan';
     }
   } catch (error) {
     console.error('Error generating plan:', error);
-    alert(error instanceof Error ? error.message : 'Could not generate a plan. Please try again.');
+    $('planError').textContent = error instanceof Error ? error.message : 'Could not generate a plan. Please try again.';
+    $('planError').hidden = false;
+    $('planError').scrollIntoView({ behavior: 'smooth', block: 'center' });
   } finally {
     if (button) button.disabled = false;
+    $('revisePlanBtn').disabled = false;
     if (overlay) {
       overlay.style.display = 'none';
     }
@@ -158,16 +187,18 @@ function saveCurrentPlan() {
 
   try {
     if (!AppState.currentPlan.id) {
-      AppState.currentPlan.id = Date.now();
+      AppState.currentPlan.id = crypto.randomUUID();
     }
 
+    AppState.plans = AppState.plans.filter(plan => plan.id !== AppState.currentPlan.id);
     AppState.plans.unshift({ ...AppState.currentPlan });
+    localStorage.setItem('lifepilot-current-plan', JSON.stringify(AppState.currentPlan));
     localStorage.setItem('lifepilot-plans', JSON.stringify(AppState.plans));
     renderSavedPlans();
 
     const saveBtn = $('savePlanBtn');
     if (saveBtn) {
-      saveBtn.textContent = '✓ Plan Saved';
+      saveBtn.textContent = 'Plan saved';
     }
   } catch (error) {
     console.error('Error saving plan:', error);
@@ -175,8 +206,88 @@ function saveCurrentPlan() {
   }
 }
 
+let taskSnapshot = structuredClone(AppState.tasks);
+let pendingTaskChanges = [];
+let syncingTasks = false;
+
+function toServerTask(task) {
+  return { id: String(task.id), task: task.title, priority: task.priority || 'medium', dueDate: task.dueDate || null,
+    completed: Boolean(task.completed), createdAt: new Date(task.createdAt || Date.now()).toISOString(), ...(task.planId ? { planId: String(task.planId) } : {}) };
+}
+function fromServerTask(task) {
+  return { id: task.id, title: task.task, priority: task.priority, dueDate: task.dueDate || '',
+    completed: task.completed, createdAt: Date.parse(task.createdAt), ...(task.planId ? { planId: task.planId } : {}) };
+}
 function saveTasks() {
   localStorage.setItem('lifepilot-planner-tasks', JSON.stringify(AppState.tasks));
+  const before = new Map(taskSnapshot.map(task => [String(task.id), task]));
+  const after = new Map(AppState.tasks.map(task => [String(task.id), task]));
+  const added = [], updated = [], deleted = [];
+  for (const [id, task] of after) {
+    const old = before.get(id);
+    if (!old) added.push(toServerTask(task));
+    else {
+      const changes = {};
+      for (const [key, serverKey] of [['title','task'],['priority','priority'],['dueDate','dueDate'],['completed','completed']]) {
+        if (task[key] !== old[key]) changes[serverKey] = key === 'dueDate' ? task[key] || null : task[key];
+      }
+      if (Object.keys(changes).length) updated.push({ id, changes });
+    }
+  }
+  for (const id of before.keys()) if (!after.has(id)) deleted.push(id);
+  taskSnapshot = structuredClone(AppState.tasks);
+  if (added.length || updated.length || deleted.length) pendingTaskChanges.push({ added, updated, deleted });
+  localStorage.setItem('lifepilot-pending-task-changes', JSON.stringify(pendingTaskChanges));
+  syncTasks();
+}
+
+async function syncTasks() {
+  if (syncingTasks) return;
+  syncingTasks = true;
+  try {
+    while (pendingTaskChanges.length) {
+      const count = pendingTaskChanges.length;
+      const batch = pendingTaskChanges.slice(0, count);
+      const changes = { added: batch.flatMap(change => change.added), updated: batch.flatMap(change => change.updated), deleted: batch.flatMap(change => change.deleted) };
+      const response = await fetch('/api/tasks/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000), body: JSON.stringify(changes) });
+      if (!response.ok) throw new Error('Task sync unavailable');
+      const result = await response.json();
+      if (!Array.isArray(result.tasks)) throw new Error('Invalid task response');
+      pendingTaskChanges.splice(0, count);
+      localStorage.setItem('lifepilot-pending-task-changes', JSON.stringify(pendingTaskChanges));
+      if (!pendingTaskChanges.length) acceptServerTasks(result.tasks);
+    }
+    $('taskSyncStatus').textContent = 'Tasks synced with your LifePilot server and MCP.';
+  } catch {
+    $('taskSyncStatus').textContent = 'Saved in this browser. Server sync unavailable; changes will retry when you return.';
+  } finally { syncingTasks = false; }
+}
+function acceptServerTasks(tasks) {
+  AppState.tasks = tasks.map(fromServerTask);
+  taskSnapshot = structuredClone(AppState.tasks);
+  localStorage.setItem('lifepilot-planner-tasks', JSON.stringify(AppState.tasks));
+  renderPlannerTasks();
+}
+async function refreshServerTasks() {
+  if (pendingTaskChanges.length || syncingTasks) { await syncTasks(); return; }
+  try {
+    const response = await fetch('/api/tasks', { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Unavailable');
+    const result = await response.json();
+    if (!Array.isArray(result.tasks)) throw new Error('Invalid response');
+    if (!pendingTaskChanges.length && !syncingTasks) acceptServerTasks(result.tasks);
+    $('taskSyncStatus').textContent = 'Tasks synced with your LifePilot server and MCP.';
+  } catch { $('taskSyncStatus').textContent = 'Tasks saved in this browser. Connect to your server to sync.'; }
+}
+function initializeTaskSync() {
+  pendingTaskChanges = parseStoredJSON('lifepilot-pending-task-changes', []);
+  if (!localStorage.getItem('lifepilot-task-migration') && AppState.tasks.length) {
+    pendingTaskChanges.unshift({ added: AppState.tasks.map(toServerTask), updated: [], deleted: [] });
+    localStorage.setItem('lifepilot-pending-task-changes', JSON.stringify(pendingTaskChanges));
+  }
+  localStorage.setItem('lifepilot-task-migration', '1');
+  refreshServerTasks();
+  window.addEventListener('focus', refreshServerTasks);
 }
 
 function getTaskTimestamp(value) {
@@ -213,13 +324,14 @@ function renderPlannerTasks() {
   const taskCount = $('taskCount');
   if (!tasksList || !taskCount) return;
 
+  renderDashboard();
   const sortedTasks = sortTasks(AppState.tasks);
   taskCount.textContent = String(sortedTasks.length);
 
   if (!sortedTasks.length) {
     tasksList.innerHTML = `
       <div class="empty-state">
-        <p>No tasks yet. Add one to get started!</p>
+        <p>Choose tasks from your plan, or add a small next step below.</p>
       </div>
     `;
     return;
@@ -227,12 +339,12 @@ function renderPlannerTasks() {
 
   tasksList.innerHTML = sortedTasks
     .map((task) => `
-      <article class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
+      <article class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${escapeHTML(task.id)}">
         <input
           type="checkbox"
           class="task-checkbox"
           data-task-action="toggle"
-          data-task-id="${task.id}"
+          data-task-id="${escapeHTML(task.id)}"
           aria-label="Mark task complete"
           ${task.completed ? 'checked' : ''}
         />
@@ -247,7 +359,7 @@ function renderPlannerTasks() {
           class="task-delete"
           type="button"
           data-task-action="delete"
-          data-task-id="${task.id}"
+          data-task-id="${escapeHTML(task.id)}"
           aria-label="Delete task"
           title="Delete task"
         >✕</button>
@@ -269,7 +381,7 @@ function addPlannerTask() {
   }
 
   AppState.tasks.push({
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     title,
     priority: prioritySelect.value || 'medium',
     dueDate: dueDateInput.value || '',
@@ -394,19 +506,9 @@ async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
 function addAIRecommendationsToPlanner() {
   if (!lastAIResponse || !lastAIResponse.recommendedActions.length) return;
 
-  const createdAt = Date.now();
-  AppState.tasks.push(...lastAIResponse.recommendedActions.map((title, index) => ({
-    id: `${createdAt}-${index}`,
-    title,
-    priority: 'medium',
-    dueDate: '',
-    completed: false,
-    createdAt
-  })));
+  const added = addTitlesToPlanner(lastAIResponse.recommendedActions);
+  $('addActionsBtn').textContent = added ? `${added} added to your planner` : 'Already in your planner';
 
-  saveTasks();
-  renderPlannerTasks();
-  $('addActionsBtn').textContent = '✓ Added to My Planner';
 }
 
 function attachPlannerEventHandlers() {
@@ -468,6 +570,8 @@ function attachTabNavigationHandlers() {
 function attachEventHandlers() {
   attachPlannerEventHandlers();
   attachTabNavigationHandlers();
+  $('addPlanTasksBtn').addEventListener('click', addSelectedPlanTasks);
+  $('revisePlanBtn').addEventListener('click', () => generatePlanFromRequest(true));
 
   const askButton = $('askLifePilotBtn');
   if (askButton) {
@@ -553,15 +657,55 @@ function attachEventHandlers() {
       const index = Number(button.dataset.planIndex);
       if (AppState.plans[index]) {
         AppState.currentPlan = AppState.plans[index];
+        localStorage.setItem('lifepilot-current-plan', JSON.stringify(AppState.currentPlan));
         renderPlan(AppState.currentPlan);
 
         const saveBtnAfterView = $('savePlanBtn');
         if (saveBtnAfterView) {
-          saveBtnAfterView.textContent = '✓ Plan Saved';
+          saveBtnAfterView.textContent = 'Plan saved';
         }
       }
     });
   }
+}
+
+function normalizeTask(title) {
+  return String(title).trim().toLocaleLowerCase();
+}
+
+function addTitlesToPlanner(titles, planId) {
+  const existing = new Set(AppState.tasks.map(task => normalizeTask(task.title)));
+  const additions = [];
+  for (const title of titles) {
+    const key = normalizeTask(title);
+    if (!key || existing.has(key)) continue;
+    existing.add(key);
+    additions.push({ id: crypto.randomUUID(), title: title.trim(), priority: 'medium', dueDate: '', completed: false, createdAt: Date.now(), ...(planId ? { planId } : {}) });
+  }
+  AppState.tasks.push(...additions);
+  saveTasks();
+  renderPlannerTasks();
+  return additions.length;
+}
+
+function addSelectedPlanTasks() {
+  if (!AppState.currentPlan) return;
+  const selected = [...document.querySelectorAll('[data-plan-task]:checked')]
+    .map(box => AppState.currentPlan.tasks[Number(box.dataset.planTask)]).filter(Boolean);
+  const added = addTitlesToPlanner(selected, AppState.currentPlan.id);
+  renderPlan(AppState.currentPlan);
+  $('planNotice').textContent = added ? `${added} task${added === 1 ? '' : 's'} added. Your next step is ready.` : 'Select a new task to add. Existing tasks are kept.';
+}
+
+function renderDashboard() {
+  const tasks = AppState.tasks;
+  const done = tasks.filter(task => task.completed).length;
+  const next = sortTasks(tasks).find(task => !task.completed);
+  $('progressCount').textContent = `${done} of ${tasks.length} completed`;
+  $('taskProgress').max = Math.max(1, tasks.length);
+  $('taskProgress').value = done;
+  $('nextAction').textContent = next?.title || (tasks.length ? 'You’ve completed your tasks. Take a moment to enjoy it.' : AppState.currentPlan?.nextSteps?.[0] || 'Start with what’s on your mind.');
+  $('progressLabel').textContent = next ? 'One manageable action. Check it off when you’re done.' : tasks.length ? 'Ready for more? Choose another task or update your plan.' : AppState.currentPlan ? 'Choose tasks from your plan to start tracking progress.' : 'Your plan and progress will appear here.';
 }
 
 // Initialize the web app
@@ -570,9 +714,13 @@ if (document.readyState === 'loading') {
     attachEventHandlers();
     renderPlannerTasks();
     renderSavedPlans();
+    initializeTaskSync();
+    if (AppState.currentPlan) renderPlan(AppState.currentPlan);
   });
 } else {
   attachEventHandlers();
   renderPlannerTasks();
   renderSavedPlans();
+  initializeTaskSync();
+  if (AppState.currentPlan) renderPlan(AppState.currentPlan);
 }

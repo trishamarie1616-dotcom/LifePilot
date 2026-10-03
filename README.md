@@ -1,373 +1,100 @@
 # LifePilot
 
-**LifePilot** turns messy requests into structured, actionable plans. It breaks down overwhelming goals into clear tasks, next steps, and follow-ups.
+LifePilot turns an overwhelming situation into a practical plan, a small next action, and a task list you can follow through on. It includes a browser dashboard and an MCP server for assistant-driven planning and task management.
 
-## Overview
+## What works
 
-LifePilot consists of three integrated components:
+- Real server-side OpenAI answers and structured plans.
+- Select individual plan tasks to add to your planner.
+- Answer missing-detail questions or revise a plan when your budget, schedule, or circumstances change.
+- Revisions include your original goal, previous plan, and completed tasks associated with that plan.
+- Completed tasks remain complete when a plan changes; new tasks are added only when you select them.
+- Duplicate prevention when adding the same task or saving the same plan again.
+- A next-action dashboard and completion progress.
+- Browser and MCP task tools share one disk-backed task store.
+- Existing browser tasks migrate to the connected server. Pending edits stay in the browser when sync is unavailable and retry on return.
+- Responsive layout with keyboard focus states and explicit error messages.
 
-1. **Web App** – Browser UI with localStorage, served by the Node server for real AI
-2. **MCP Server** – Exposes LifePilot planning as an MCP tool with Streamable HTTP support
-3. **MCP App UI** – An interactive UI resource that renders plans in MCP-compatible hosts
+## Run locally or in Codespaces
 
-## Standalone Web App
-
-Real AI answers and plans require the Node backend. GitHub Pages can serve the interface but cannot run `/api/ask` or `/api/plan`. Open the app from the running server for AI features.
-
-**Usage:**
-- Open `http://localhost:3001` after starting the server
-- Enter a request (e.g., "My 2014 Nissan Sentra keeps going into limp mode and I'm getting code P0965")
-- Click "Generate Plan" or press Ctrl+Enter
-- Plans are saved to browser localStorage
-
-**Features:**
-- Vehicle repair scenario detection and planning
-- Job search planning
-- Medical appointment preparation
-- Travel planning
-- General goal breakdown
-- Plan persistence via localStorage
-
-**Files:**
-- `index.html` – Main page (GitHub Pages compatible)
-- `app.js` – UI handlers and calls to the AI backend
-- `styles.css` – Styling
-
-## MCP Apps Integration
-
-LifePilot is also available as an MCP App, allowing integration with MCP-compatible hosts (Claude Desktop, Cursor, Cline, and future Alexa+ integration).
-
-### MCP Server
-
-The server exposes the planning engine via the **Model Context Protocol** using Streamable HTTP transport (recommended for hackathons and MCP hosts).
-
-**MCP Tool:** `generate-plan`
-- **Input:** `{ request: string }`
-- **Output:** `{ goal, context, tasks, nextSteps, followups, informationNeeded }`
-- **UI Resource:** `ui://lifepilot/mcp-app.html` (bundled with MCP App SDK)
-
-**Features:**
-- Stateless Streamable HTTP transport (per-request architecture)
-- Optional stdio transport for local Claude Desktop testing
-- Text fallback for non-UI clients
-- Structured content for MCP App UI rendering
-- CORS-enabled (safe for cross-origin integration)
-
-### MCP App UI
-
-When invoked through an MCP host that supports MCP Apps, the tool automatically renders an interactive UI displaying:
-- Goal and context
-- Task list
-- Next steps
-- Follow-ups
-- Information needed
-
-The UI uses the official MCP Apps SDK (`@modelcontextprotocol/ext-apps`) with PostMessageTransport for secure iframe communication.
-
-### Alexa+ MCP Tools
-
-In addition to `generate-plan`, the MCP server exposes a small set of task-management tools intended for Alexa+ and other MCP agents:
-
-- **`generate-plan`** – Turn a request into a structured plan (goal, tasks, next steps, follow-ups, information needed).
-- **`add-task`** – Add a task to LifePilot. Input: `{ task: string, priority?: "low" | "medium" | "high", dueDate?: string }`.
-- **`list-tasks`** – Return the current LifePilot task list as structured JSON.
-- **`complete-task`** – Mark a LifePilot task complete by id or task text. Input: `{ task: string }`.
-
-**Important limitation:** the standalone web Planner stores tasks in the *browser's* `localStorage` (`lifepilot-planner-tasks`), which server-side MCP tools cannot read or write. `add-task`, `list-tasks`, and `complete-task` operate on a separate, in-memory, server-side task store that lives only for the lifetime of the running MCP server process. This keeps Alexa+/agent task management functional without incorrectly pretending MCP can access browser localStorage; the two task lists are not currently synced.
-
-## Getting Started
-
-### Prerequisites
-- Node.js 20+
-- npm or similar package manager
-
-### Install Dependencies
+Requires Node.js 20+ and npm.
 
 ```bash
-npm install
-```
-
-### Build MCP Server
-
-```bash
-npm run build
-```
-
-This produces:
-- `dist/server.js` – Compiled MCP server
-- `dist/main.js` – Compiled server entry point
-- `dist/mcp-app.html` – Bundled MCP App UI (single HTML file with CSS and JS)
-
-### Run MCP Server
-
-#### Streamable HTTP (default, hackathon-ready)
-
-```bash
+npm ci
+npm test
 npm run mcp:start
 ```
 
-Starts the server on `http://localhost:3001/mcp` using Streamable HTTP transport. This is the recommended mode for MCP hosts.
+Open `http://localhost:3001`. In Codespaces, open port 3001 from the Ports panel and keep its visibility **Private**.
 
-The same server also serves the standalone app at `/` and the AI Assistant at `POST /api/ask`. Configure the OpenAI key in the server environment; it is never needed by the browser:
+Set `OPENAI_API_KEY` in the **server environment** before starting. For Codespaces, use a GitHub Codespaces secret with repository access; restart the Codespace after changing secrets. Do not put the key in source files, browser scripts, commits, or chat. `OPENAI_MODEL` is optional; the existing default is `gpt-4.1-mini`. OpenAI usage requires available API quota.
 
-```bash
-export OPENAI_API_KEY="your-server-side-key"
-npm run mcp:start
-```
+No key is required for `npm test`: provider responses are mocked in these deterministic tests. A missing server key causes an explicit AI configuration error rather than a canned plan.
 
-The AI Assistant uses `gpt-4.1-mini` by default. Set `OPENAI_MODEL` on the server to override it. To test the endpoint:
+## Demo story
 
-```bash
-curl -X POST http://localhost:3001/api/ask \
-  -H "Content-Type: application/json" \
-  -d '{"question":"How can I prepare for a job interview?"}'
-```
+1. Enter: “My car broke down. I have $300 and need to get to work Monday.”
+2. Review the plan and the specific questions it asks. Advice is provisional where information is missing; LifePilot does not diagnose a vehicle.
+3. Select useful tasks and add them to the planner.
+4. Complete a task; watch the next action and progress update.
+5. Enter an update such as “My budget is now $100. My commute is five miles.” The plan is revised with its earlier context and completed work.
+6. Use MCP `list-tasks` to show the same tasks. Complete a task through MCP, then return to the browser or reload to see the updated progress.
+7. Restart the server and show that tasks survive. Saved plans are retained in the same browser.
 
-In Codespaces, open the forwarded port `3001` in a browser to use the app; the frontend and endpoint share that origin. GitHub Pages remains a static deployment and needs a same-origin backend or reverse proxy for AI requests.
+This is a self-hosted MCP experience intended for the Alexa+ hackathon track. It is not a claim of a live Amazon Alexa+ add-on registration or access to Amazon's gated preview tools. Demo the actual running server and its tools in an MCP-compatible host.
 
-**Custom port:**
-```bash
-PORT=3000 npm run mcp:start
-```
+## MCP
 
-#### stdio (local development, Claude Desktop)
+Streamable HTTP endpoint: `http://localhost:3001/mcp`.
 
 ```bash
 npm run mcp:stdio
 ```
 
-Connects via stdio. Useful for testing with Claude Desktop locally.
+Tools:
 
-#### Development with Hot Reload
+- `generate-plan`: `{ request }`; optional `revision: { originalRequest, plan, completedTasks }` to revise an existing plan. Returns `goal`, `context`, `tasks`, `nextSteps`, `followups`, and `informationNeeded`, plus an MCP App resource and text fallback.
+- `add-task`: `{ task, priority?, dueDate? }`.
+- `list-tasks`: `{}`.
+- `complete-task`: `{ task }`, matching an id or exact task text.
 
-```bash
-npm run mcp:dev
-```
+The UI resource is `ui://lifepilot/mcp-app.html`, bundled by Vite. `mcp-app.ts` renders the tool's structured plan inside an MCP-compatible host.
 
-Rebuilds and restarts the server on file changes (requires `NODE_ENV=development`).
+## Storage and boundaries
 
-## MCP Configuration
+Plans and the current plan are saved in browser localStorage. Tasks persist to `data/tasks.json` by default; set `LIFEPILOT_TASK_FILE` for another writable path. The browser's task cache is kept for recovery. Browser changes sync as additions, changed fields, and deletions so an unrelated MCP task is not replaced. MCP changes become visible when the browser regains focus or reloads.
 
-### For Claude Desktop
+This is a **single-user local/private demo**, with one task store per server and no account isolation. Do not expose it publicly with an API key until authentication, access controls, usage limits, and user-separated storage are added. Use only one server process for the JSON task file. Hosting with an ephemeral filesystem will need a persistent disk or database.
 
-Add to `claude_desktop_config.json`:
+The AI has no browsing, booking, purchasing, messaging, or reminder tools. It suggests tasks; it does not perform real-world actions. Confirm important advice and current facts independently.
 
-```json
-{
-  "mcpServers": {
-    "lifepilot": {
-      "command": "node",
-      "args": ["/path/to/LifePilot/dist/main.js", "--stdio"]
-    }
-  }
-}
-```
+The existing GitHub Pages workflow serves static files only. It cannot run `/api/ask`, `/api/plan`, or task synchronization. Use the Node server for the complete experience.
 
-### For Other MCP Hosts (HTTP)
-
-Use the Streamable HTTP endpoint:
-
-```
-POST http://localhost:3001/mcp
-Content-Type: application/json
-
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "generate-plan",
-    "arguments": {
-      "request": "I need to find a new job but I'm overwhelmed and don't know where to start."
-    }
-  }
-}
-```
-
-## Example Requests
-
-### Vehicle Repair (Nissan P0965)
-```
-My 2014 Nissan Sentra keeps going into limp mode and I'm getting code P0965.
-```
-
-**Plan includes:**
-- Diagnostics and code analysis
-- What to check before visiting a mechanic
-- What to ask the repair shop
-- Preventive follow-ups
-
-### Job Search
-```
-I need to find a new job but I'm overwhelmed and don't know where to start.
-```
-
-**Plan includes:**
-- Target role selection
-- Resume and LinkedIn updates
-- Application strategy
-- Interview prep follow-ups
-
-### Other Scenarios
-- Medical appointment preparation
-- Travel planning
-- General goal breakdown
-
-## Architecture
-
-### Shared Planning Engine
-
-`ai.ts` validates input, calls OpenAI with strict structured output, and validates the returned answer or plan. The browser uses `/api/ask` and `/api/plan`; the MCP `generate-plan` tool calls the same module. Errors are shown explicitly rather than replaced with canned plans.
-
-### Configure real AI
-
-Set `OPENAI_API_KEY` only in the server environment. Never put it in browser JavaScript, commit it, or paste it into chat. `OPENAI_MODEL` is optional and defaults to the existing `gpt-4.1-mini` setting.
-
-Install dependencies, run `npm run build`, then `npm run mcp:start`. Open `http://localhost:3001` (or your server's HTTPS address). A missing key produces a configuration error. Invalid keys, billing limits, refusals, and malformed provider responses produce explicit errors. API usage requires a provider account with available quota.
-
-The model has no browsing or action tools; generated advice is not a live lookup and does not execute tasks. Existing saved plans and browser tasks remain in localStorage.
-
-Run `npm test` to build and run deterministic provider-contract tests without using a real key or incurring API charges.
-
-### MCP App Communication
-
-The MCP App UI communicates with the MCP host via:
-- **PostMessageTransport** – Secure iframe-to-parent communication using `window.postMessage`
-- **structuredContent** – Typed plan data (JSON) for UI rendering
-- **text fallback** – Plain text rendering for non-UI MCP clients
-
-## What's Implemented
-
-✅ Standalone GitHub Pages web app
-✅ MCP server with `generate-plan` tool
-✅ MCP App UI resource (bundled HTML + PostMessageTransport)
-✅ Streamable HTTP transport (hackathon-ready)
-✅ stdio transport (local development)
-✅ Vehicle repair scenario (Nissan P0965 test case)
-✅ Job search scenario
-✅ Medical appointment scenario
-✅ Travel planning scenario
-✅ Structured content + text fallback
-✅ CORS support
-✅ TypeScript compilation
-✅ Vite bundling (UI as single HTML file)
-
-## What's NOT Implemented Yet
-
-❌ AWS Bedrock integration (for AI backend)
-❌ Alexa+ skill (standalone)
-❌ Persistent database for saved plans (MCP version)
-❌ Real AI model calls (still using rule-based mock planner)
-❌ Voice input/output
-❌ Multi-turn conversation in MCP context
-
-## Dependencies
-
-**Runtime:**
-- `@modelcontextprotocol/client`: 2.0.0
-- `@modelcontextprotocol/express`: 2.0.0
-- `@modelcontextprotocol/ext-apps`: ^2.0.0
-- `@modelcontextprotocol/node`: 2.0.0
-- `@modelcontextprotocol/server`: 2.0.0
-- `cors`: ^2.8.5
-- `express`: ^5.1.0
-- `zod`: ^4.2.0
-
-**Development:**
-- `typescript`: ^5.9.3
-- `vite`: ^6.0.0
-- `vite-plugin-singlefile`: ^2.3.0
-
-## File Structure
-
-```
-LifePilot/
-├── index.html                # Standalone web app page
-├── app.js                    # Planning engine + web app UI (GitHub Pages)
-├── styles.css                # Styling
-├── server.ts                 # MCP server (tool + resource registration)
-├── main.ts                   # Server entry point (Streamable HTTP + stdio)
-├── mcp-app.html              # MCP App UI (HTML template)
-├── mcp-app.ts                # MCP App client-side (PostMessageTransport)
-├── package.json              # Dependencies + build scripts
-├── tsconfig.json             # TypeScript config for UI
-├── tsconfig.server.json      # TypeScript config for server
-├── vite.config.ts            # Vite config (bundle UI into single HTML)
-├── .gitignore
-├── LICENSE                   # MIT
-└── README.md                 # This file
-```
-
-## Deployment
-
-### GitHub Pages (Standalone App)
-
-The standalone app is deployable as-is to GitHub Pages:
+## Verification
 
 ```bash
-git push origin main
+npm test
 ```
 
-Then enable GitHub Pages in repository settings. The app will be available at `https://username.github.io/LifePilot/`.
+Compiles TypeScript, builds the MCP App, and tests provider schemas/errors, revision context, and task-store behavior. GitHub Actions also installs Playwright, exercises the browser-to-plan-to-task-to-revision workflow, tests persistence and MCP synchronization, and captures desktop/mobile screenshots as `lifepilot-ui-preview` artifacts. Browser AI responses in that test are mocked, so it does not spend API credits.
 
-**Note:** The GitHub Pages version does NOT require Node.js or the MCP server to function.
-
-### MCP Server (Streamable HTTP)
-
-Deploy the MCP server to a Node.js host (Heroku, Railway, AWS Lambda, etc.):
+To run the browser check locally after installing Playwright and Chromium:
 
 ```bash
-npm install
 npm run build
-PORT=3000 npm run mcp:start
+node tests/browser-smoke.mjs
 ```
 
-Then configure MCP hosts to use `http://<your-server>/mcp` as the Streamable HTTP endpoint.
+## Main files
 
-## Testing
-
-### Test Nissan P0965 (Vehicle Repair)
-
-1. Standalone app:
-   - Open `index.html` in browser
-   - Paste: "My 2014 Nissan Sentra keeps going into limp mode and I'm getting code P0965."
-   - Verify plan includes diagnostic code P0965 and limp mode context
-
-2. MCP server (HTTP):
-   ```bash
-   npm run build
-   npm run mcp:start
-   
-   # In another terminal:
-   curl -X POST http://localhost:3001/mcp \
-     -H "Content-Type: application/json" \
-     -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"generate-plan","arguments":{"request":"My 2014 Nissan Sentra keeps going into limp mode and I'\''m getting code P0965."}}}'
-   ```
-   Verify response includes structured content with vehicle details and code
-
-### Test Job Search (Overwhelm Scenario)
-
-1. Standalone app:
-   - Paste: "I need to find a new job but I'm overwhelmed and don't know where to start."
-   - Verify plan includes immediate actionable steps
-
-2. MCP server:
-   - Use same test as above, substituting the job search request
+- `index.html`, `styles.css`, `app.js`: browser dashboard and interaction flow.
+- `ai.ts`: provider requests, structured schemas, validation, and contextual revisions.
+- `task-store.ts`: shared persistent task storage.
+- `main.ts`: HTTP app, AI APIs, task APIs, and MCP transport.
+- `server.ts`: MCP tools and UI resource.
+- `mcp-app.ts`, `mcp-app.html`: MCP App interface.
+- `tests/`: deterministic contract tests and browser integration check.
 
 ## License
 
-MIT
-
-## Future Integration Points
-
-- **AWS Bedrock:** Add another provider to the shared `ai.ts` module
-- **Alexa+ Skill:** Register LifePilot as a native Alexa skill
-- **Multi-turn Conversation:** Support follow-up refinements within MCP context
-- **Database:** Persistent plan storage (instead of localStorage)
-- **Voice Input/Output:** Alexa voice integration for verbal planning
-
----
-
-**Built for the Amazon Alexa+ Hackathon**
-
-LifePilot demonstrates MCP Apps integration with Streamable HTTP transport, providing a portable planning engine across multiple platforms.
+MIT. See `LICENSE`.

@@ -64,3 +64,26 @@ test('real AI contract and failures', async t => {
     else process.env.OPENAI_API_KEY = originalKey;
   }
 });
+
+test('plan revisions carry original constraints and completed work', async () => {
+  const savedFetch = globalThis.fetch;
+  const savedKey = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'test-only';
+  try {
+    globalThis.fetch = async (_, init) => {
+      const body = JSON.parse(init.body);
+      assert.equal(body.messages.length, 3);
+      const context = body.messages[1].content;
+      assert.match(context, /\$200/);
+      assert.match(context, /Measure the plot/);
+      assert.equal(body.messages[2].content, 'My budget is now $100');
+      return reply(plan);
+    };
+    const revision = { originalRequest: 'Garden with $200 and four volunteers', plan, completedTasks: ['Measure the plot'] };
+    assert.deepEqual(await generatePlan('My budget is now $100', revision), plan);
+    await assert.rejects(async () => generatePlan('Update', { bad: true }), error => error.status === 400);
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedKey === undefined) delete process.env.OPENAI_API_KEY; else process.env.OPENAI_API_KEY = savedKey;
+  }
+});
