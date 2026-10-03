@@ -10,3 +10,13 @@ Thumbs.db
 node_modules/
 dist/
 build/
+
+# Server secrets
+.env
+.env.*
+!.env.example
+pnpm-lock.yaml
+
+# Local single-user task database
+data/
+artifacts/

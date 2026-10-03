@@ -1,11 +1,3 @@
-// LifePilot prototype: static, self-contained planning app for GitHub Pages.
-// This file is designed to remain compatible with normal static hosting and
-// later replacement by a real AI/agent layer without redesigning the UI.
-//
-// SHARED PLANNING ENGINE: RequestAnalyzer and MockAIGenerator are used by both
-// the standalone web app AND the MCP server (via server.ts import).
-// Do not modify the structure without testing both interfaces.
-
 function parseStoredJSON(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -18,11 +10,14 @@ function parseStoredJSON(key, fallback) {
 const AppState = {
   plans: parseStoredJSON('lifepilot-plans', []),
   tasks: parseStoredJSON('lifepilot-planner-tasks', []),
-  currentPlan: null
+  currentPlan: parseStoredJSON('lifepilot-current-plan', null)
 };
 
 let lastAIQuestion = '';
 let lastAIResponse = null;
+let selectedAttachments = [];
+let isReadingAttachments = false;
+let isSubmittingQuestion = false;
 
 const PRIORITY_RANK = {
   high: 0,
@@ -33,314 +28,22 @@ const PRIORITY_RANK = {
 const $ = (id) => document.getElementById(id);
 const input = $('userInput');
 
-// ============================================================================
-// SHARED PLANNING ENGINE (used by both web app and MCP server)
-// ============================================================================
-
-const RequestAnalyzer = {
-  extract(request) {
-    const cleanRequest = String(request || '').trim();
-    const lowerRequest = cleanRequest.toLowerCase();
-
-    const details = {
-      originalRequest: cleanRequest,
-      intent: 'general',
-      context: [],
-      entities: {},
-      missingInformation: []
-    };
-
-    // Extract year
-    const yearMatch = cleanRequest.match(/\b(19|20)\d{2}\b/);
-    if (yearMatch) details.entities.year = yearMatch[0];
-
-    // Extract vehicle make
-    const makeMatch = cleanRequest.match(/\b(ford|chevy|chevrolet|toyota|honda|nissan|bmw|audi|volkswagen|hyundai|kia|jeep|dodge|ram|gmc|buick|cadillac|tesla|lexus|mazda|subaru|volvo|mercedes|porsche)\b/gi);
-    if (makeMatch) details.entities.make = makeMatch[0];
-
-    // Extract vehicle model
-    const modelMatch = cleanRequest.match(/\b(sentra|civic|accord|camry|corolla|f-150|silverado|focus|escape|mustang|cr-v|rav4|altima)\b/gi);
-    if (modelMatch) details.entities.model = modelMatch[0];
-
-    // Extract diagnostic code (e.g., P0965)
-    const codeMatch = cleanRequest.match(/p\d{4}/gi);
-    if (codeMatch) {
-      details.entities.diagnosticCode = codeMatch[0].toUpperCase();
-    }
-
-    // Extract vehicle symptoms mentioned by the user
-    const vehicleSymptoms = [];
-
-    if (/limp mode/i.test(cleanRequest)) {
-      vehicleSymptoms.push('enters limp mode');
-    }
-
-    if (/won'?t shift|not shift|doesn'?t shift|does not shift/i.test(cleanRequest)) {
-      vehicleSymptoms.push('does not shift normally');
-    }
-
-    if (/restart|shut.*off.*turn.*back on|turn.*off.*back on/i.test(cleanRequest)) {
-      vehicleSymptoms.push('temporarily improves after restarting');
-    }
-
-    if (/jerk|jerking|shudder|shuddering/i.test(cleanRequest)) {
-      vehicleSymptoms.push('jerking or shuddering');
-    }
-
-    if (/slip|slipping/i.test(cleanRequest)) {
-      vehicleSymptoms.push('possible slipping');
-    }
-
-    if (vehicleSymptoms.length) {
-      details.entities.symptoms = vehicleSymptoms.join(', ');
-      details.context.push(`Reported symptoms: ${vehicleSymptoms.join(', ')}`);
-    }
-
-    // Detect vehicle repair intent
-    if (/(limp mode|warning light|transmission|engine|diagnostic code|vehicle|car|repair|mechanic|check engine)/i.test(cleanRequest)) {
-      details.intent = 'vehicle_repair';
-      details.context.push('Vehicle repair/diagnostic scenario');
-    }
-
-    // Detect job search intent
-    if (/(job|career|resume|interview|hiring|linkedin|application|job search|cover letter|recruiter)/i.test(cleanRequest)) {
-      details.intent = 'job_search';
-      details.context.push('Job-search or career-transition scenario');
-    }
-
-    // Detect medical/doctor intent
-    if (/(doctor|medical|appointment|health|clinic|dentist|physician|symptom|checkup|prescription)/i.test(cleanRequest)) {
-      details.intent = 'doctor_appointment';
-      details.context.push('Medical preparation or scheduling scenario');
-    }
-
-    // Detect travel intent
-    if (/(vacation|trip|travel|flight|hotel|destination|getaway|holiday|itinerary)/i.test(cleanRequest)) {
-      details.intent = 'travel_planning';
-      details.context.push('Travel or vacation planning scenario');
-    }
-
-    // Detect user overwhelm signal
-    if (/overwhelmed|dont know where to start|not sure where to start|stuck|confused/i.test(cleanRequest)) {
-      details.context.push('User is overwhelmed or unsure where to start');
-    }
-
-    // Populate missing information by intent
-    if (details.intent === 'vehicle_repair') {
-      details.missingInformation = [
-        'Current mileage and maintenance history',
-        ...(details.entities.symptoms ? [] : ['Exact symptoms and when they started']),
-        ...(details.entities.diagnosticCode
-          ? ['Whether there are any additional codes or warning lights']
-          : ['Whether there are any diagnostic codes or warning lights']),
-        'Whether the issue happens while idling, accelerating, or under load'
-      ];
-    }
-
-    if (details.intent === 'job_search') {
-      details.missingInformation = [
-        'Target role or roles',
-        'Location preference',
-        'Desired salary range',
-        'Timeline you need to start working',
-        'Your experience and strongest skills'
-      ];
-    }
-
-    if (details.intent === 'doctor_appointment') {
-      details.missingInformation = [
-        'Type of appointment needed',
-        'Symptoms and how long they have been happening',
-        'Insurance information',
-        'Preferred doctor or clinic'
-      ];
-    }
-
-    if (details.intent === 'travel_planning') {
-      details.missingInformation = [
-        'Travel dates',
-        'Budget',
-        'Destination preferences',
-        'Number of travelers',
-        'Trip length'
-      ];
-    }
-
-    if (details.intent === 'general' && !details.context.length) {
-      details.missingInformation = [
-        'What success looks like',
-        'Your timeline',
-        'Any realistic constraints or budget',
-        'What support or resources you already have'
-      ];
-    }
-
-    return details;
-  }
-};
-
-const MockAIGenerator = {
-  generate(request) {
-    const analysis = RequestAnalyzer.extract(request);
-
-    if (analysis.intent === 'vehicle_repair') {
-      const vehicleLabel = [analysis.entities.year, analysis.entities.make, analysis.entities.model].filter(Boolean).join(' ');
-      const vehicleText = vehicleLabel || 'your vehicle';
-      const codeText = analysis.entities.diagnosticCode
-        ? ` ${analysis.entities.diagnosticCode}`
-        : '';
-
-      return {
-        goal: analysis.entities.diagnosticCode
-          ? `Diagnose the cause of${codeText} and the reported issues affecting ${vehicleText}, then identify the appropriate repair.`
-          : `Diagnose the reported issues affecting ${vehicleText} without guessing at the root cause.`,
-        context: [
-          `Request includes: ${vehicleText}`,
-          analysis.entities.diagnosticCode ? `Diagnostic code identified: ${analysis.entities.diagnosticCode}` : 'No diagnostic code was explicitly provided',
-          analysis.entities.symptoms
-            ? `Reported symptoms: ${analysis.entities.symptoms}.`
-            : 'The request indicates a vehicle issue that needs targeted diagnosis.'
-        ].join(' '),
-        tasks: [
-          'Document exactly when the limp mode appears and under what conditions.',
-          'Check whether there are any other warning lights or fault codes beyond the current one.',
-          'Review recent service history and any recent repairs or maintenance.',
-          'Schedule a diagnostic inspection with a trusted mechanic or repair shop.',
-          'Ask for a written estimate and explanation of the likely root cause before approving work.'
-        ],
-        nextSteps: [
-          'Call a repair shop today to schedule a diagnostic appointment.',
-          'Bring a list of symptoms, timing, and the code to the appointment.',
-          'Avoid driving aggressively until the issue is diagnosed.'
-        ],
-        followups: [
-          'Check the mechanic\'s diagnosis and estimate before approving repairs.',
-          'Confirm any transmission or control-module issues are clearly explained in writing.',
-          'Verify the vehicle stays out of limp mode after the repair.'
-        ],
-        informationNeeded: analysis.missingInformation
-      };
-    }
-
-    if (analysis.intent === 'job_search') {
-      return {
-        goal: 'Build a focused plan to find work and reduce the overwhelm while keeping momentum.',
-        context: [
-          'The request shows a job-search intent.',
-          /overwhelmed|dont know where to start|not sure where to start|stuck/i.test(request) ? 'The user is feeling overwhelmed, so the plan should simplify the process and create immediate steps.' : 'The user needs a structured approach to job search.'
-        ].join(' '),
-        tasks: [
-          'Choose 2-3 target roles that match your background and interests.',
-          'Update your resume for those specific roles and remove outdated details.',
-          'Refresh your LinkedIn profile and a brief professional summary.',
-          'Create a simple application tracker with dates and follow-up reminders.',
-          'Identify a short list of employers you want to target.'
-        ],
-        nextSteps: [
-          'Pick your top three target roles today.',
-          'Update your resume and LinkedIn profile this week.',
-          'Apply to a small batch of jobs that line up with your targets.'
-        ],
-        followups: [
-          'Track applications and follow-up dates in one place.',
-          'Review interview feedback and adjust your approach weekly.',
-          'Check in on your momentum and avoid applying randomly.'
-        ],
-        informationNeeded: analysis.missingInformation
-      };
-    }
-
-    if (analysis.intent === 'doctor_appointment') {
-      return {
-        goal: 'Prepare for a medical appointment and make the visit useful and efficient.',
-        context: 'The user wants to schedule or prepare for a doctor visit but is unsure what to gather beforehand.',
-        tasks: [
-          'Write down the symptoms, their severity, and how long they have been happening.',
-          'List any medications, allergies, and medical history you want to share.',
-          'Check insurance details and confirm the clinic or doctor accepts your plan.',
-          'Prepare 2-3 questions for the appointment in advance.',
-          'Book the appointment and note any required preparation such as fasting.'
-        ],
-        nextSteps: [
-          'Call or book the appointment today.',
-          'Gather your insurance card and symptom notes.',
-          'Write down the questions you want answered.'
-        ],
-        followups: [
-          'Confirm the appointment 24 hours before it happens.',
-          'After the visit, write down any new instructions or prescriptions.',
-          'Schedule any recommended follow-up appointment before leaving.'
-        ],
-        informationNeeded: analysis.missingInformation
-      };
-    }
-
-    if (analysis.intent === 'travel_planning') {
-      return {
-        goal: 'Choose a vacation direction and build a usable plan around budget, timing, and preferences.',
-        context: 'The user wants to take a trip but has not decided where to go or what trip details matter most yet.',
-        tasks: [
-          'Set your travel dates and overall budget.',
-          'List the type of trip you want: beach, city, nature, family, adventure, etc.',
-          'Compare 2-3 destination options that fit the budget and time available.',
-          'Check flight and hotel pricing for the target dates.',
-          'Create a simple shortlist of must-do activities.'
-        ],
-        nextSteps: [
-          'Pick a realistic travel window and price range.',
-          'Research two or three destinations that fit your preferences.',
-          'Choose one destination and book essentials.'
-        ],
-        followups: [
-          'Book flights and lodging before finalizing the itinerary.',
-          'Check travel requirements, weather, and packing list closer to departure.',
-          'Confirm transportation and key reservations before the trip.'
-        ],
-        informationNeeded: analysis.missingInformation
-      };
-    }
-
-    return {
-      goal: 'Break the request into manageable actions and identify the next concrete step.',
-      context: 'The request is not specific enough to determine a perfect plan, but it still contains a clear intention that can be broken down into actionable steps.',
-      tasks: [
-        'Clarify exactly what success looks like for this goal.',
-        'List the resources, constraints, and information you already have.',
-        'Break the result into smaller milestones or time blocks.',
-        'Choose the smallest clear action you can complete now.'
-      ],
-      nextSteps: [
-        'State the goal in one sentence.',
-        'Pick one immediate action you can finish this week.',
-        'Schedule a short time block to complete it.'
-      ],
-      followups: [
-        'Review progress after the first step.',
-        'Adjust the plan if conditions or constraints change.',
-        'Check in on the goal again after a few days.'
-      ],
-      informationNeeded: analysis.missingInformation
-    };
-  }
-};
-
-// ============================================================================
-// WEB APP UI LAYER (GitHub Pages standalone app)
-// ============================================================================
-
 function renderPlan(plan) {
   if (!plan) return;
 
   const goalEl = $('planGoal');
   if (goalEl) {
-    const details = [plan.goal, plan.context].filter(Boolean).join(' ');
-    goalEl.textContent = details;
+    goalEl.textContent = plan.goal;
+    $('planContext').textContent = plan.context;
   }
 
   const tasksEl = $('planTasks');
   if (tasksEl) {
     tasksEl.innerHTML = (plan.tasks || [])
-      .map((task) => `<li>${escapeHTML(task)}</li>`)
+      .map((task, index) => {
+        const added = AppState.tasks.some(saved => normalizeTask(saved.title) === normalizeTask(task));
+        return `<li><label><input type="checkbox" data-plan-task="${index}" ${added ? 'disabled' : 'checked'}><span>${escapeHTML(task)}${added ? ' <small>(already in planner)</small>' : ''}</span></label></li>`;
+      })
       .join('');
   }
 
@@ -358,6 +61,11 @@ function renderPlan(plan) {
       .join('');
   }
 
+  renderAIList($('planInformation'), plan.informationNeeded || []);
+  $('informationSection').hidden = !(plan.informationNeeded || []).length;
+  $('planUpdate').value = '';
+  $('planNotice').textContent = '';
+  renderDashboard();
   const container = $('currentPlanContainer');
   if (container) {
     container.style.display = 'block';
@@ -405,42 +113,76 @@ function escapeHTML(value) {
   }[char]));
 }
 
-function generatePlanFromRequest() {
-  const request = input.value.trim();
+async function generatePlanFromRequest(revising = false) {
+  const isRevision = revising === true;
+  const request = isRevision ? $('planUpdate').value.trim() : input.value.trim();
+  if (isRevision && !AppState.currentPlan) return;
   if (!request) {
-    input.focus();
+    (isRevision ? $('planUpdate') : input).focus();
     return;
   }
 
+  const button = $('submitBtn');
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  $('revisePlanBtn').disabled = true;
+  $('planError').hidden = true;
   const overlay = $('loadingOverlay');
   if (overlay) {
     overlay.style.display = 'grid';
   }
 
-  setTimeout(() => {
-    try {
-      const plan = MockAIGenerator.generate(request);
-      AppState.currentPlan = {
-        ...plan,
-        title: request,
-        createdAt: new Date().toISOString()
-      };
-
-      renderPlan(AppState.currentPlan);
-
-      const saveBtn = $('savePlanBtn');
-      if (saveBtn) {
-        saveBtn.textContent = '💾 Save This Plan';
-      }
-    } catch (error) {
-      console.error('Error generating plan:', error);
-      alert('I\'m sorry, but there was an error. Please try again.');
-    } finally {
-      if (overlay) {
-        overlay.style.display = 'none';
-      }
+  try {
+    const response = await fetch('/api/plan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(35000), body: JSON.stringify({ request,
+        ...(isRevision ? { revision: {
+          originalRequest: AppState.currentPlan.originalRequest || AppState.currentPlan.title || '',
+          plan: Object.fromEntries(['goal','context','tasks','nextSteps','followups','informationNeeded'].map(key => [key, AppState.currentPlan[key] || (['goal','context'].includes(key) ? '' : [])])),
+          completedTasks: AppState.tasks.filter(task => task.completed && String(task.planId) === String(AppState.currentPlan.id)).map(task => task.title).slice(-100)
+        } } : {})
+      })
+    });
+    const plan = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(plan?.error || 'Open LifePilot from its running AI server to generate a plan.');
+    if (!plan || typeof plan.goal !== 'string' || typeof plan.context !== 'string' ||
+      !['tasks', 'nextSteps', 'followups', 'informationNeeded'].every(key =>
+        Array.isArray(plan[key]) && plan[key].every(item => typeof item === 'string'))) {
+      throw new Error('LifePilot received an invalid plan. Please try again.');
     }
-  }, 350);
+    const previous = isRevision ? AppState.currentPlan : null;
+    AppState.currentPlan = {
+      ...previous, ...plan,
+      id: previous?.id || crypto.randomUUID(),
+      originalRequest: previous?.originalRequest || previous?.title || request,
+      title: previous?.title || request,
+      createdAt: previous?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem('lifepilot-current-plan', JSON.stringify(AppState.currentPlan));
+    if (previous && AppState.plans.some(saved => saved.id === previous.id)) {
+      saveCurrentPlan();
+    }
+
+    renderPlan(AppState.currentPlan);
+
+    const saveBtn = $('savePlanBtn');
+    if (saveBtn) {
+      saveBtn.textContent = 'Save plan';
+    }
+  } catch (error) {
+    console.error('Error generating plan:', error);
+    $('planError').textContent = error instanceof Error ? error.message : 'Could not generate a plan. Please try again.';
+    $('planError').hidden = false;
+    $('planError').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } finally {
+    if (button) button.disabled = false;
+    $('revisePlanBtn').disabled = false;
+    if (overlay) {
+      overlay.style.display = 'none';
+    }
+  }
+
 }
 
 function saveCurrentPlan() {
@@ -448,16 +190,18 @@ function saveCurrentPlan() {
 
   try {
     if (!AppState.currentPlan.id) {
-      AppState.currentPlan.id = Date.now();
+      AppState.currentPlan.id = crypto.randomUUID();
     }
 
+    AppState.plans = AppState.plans.filter(plan => plan.id !== AppState.currentPlan.id);
     AppState.plans.unshift({ ...AppState.currentPlan });
+    localStorage.setItem('lifepilot-current-plan', JSON.stringify(AppState.currentPlan));
     localStorage.setItem('lifepilot-plans', JSON.stringify(AppState.plans));
     renderSavedPlans();
 
     const saveBtn = $('savePlanBtn');
     if (saveBtn) {
-      saveBtn.textContent = '✓ Plan Saved';
+      saveBtn.textContent = 'Plan saved';
     }
   } catch (error) {
     console.error('Error saving plan:', error);
@@ -465,8 +209,88 @@ function saveCurrentPlan() {
   }
 }
 
+let taskSnapshot = structuredClone(AppState.tasks);
+let pendingTaskChanges = [];
+let syncingTasks = false;
+
+function toServerTask(task) {
+  return { id: String(task.id), task: task.title, priority: task.priority || 'medium', dueDate: task.dueDate || null,
+    completed: Boolean(task.completed), createdAt: new Date(task.createdAt || Date.now()).toISOString(), ...(task.planId ? { planId: String(task.planId) } : {}) };
+}
+function fromServerTask(task) {
+  return { id: task.id, title: task.task, priority: task.priority, dueDate: task.dueDate || '',
+    completed: task.completed, createdAt: Date.parse(task.createdAt), ...(task.planId ? { planId: task.planId } : {}) };
+}
 function saveTasks() {
   localStorage.setItem('lifepilot-planner-tasks', JSON.stringify(AppState.tasks));
+  const before = new Map(taskSnapshot.map(task => [String(task.id), task]));
+  const after = new Map(AppState.tasks.map(task => [String(task.id), task]));
+  const added = [], updated = [], deleted = [];
+  for (const [id, task] of after) {
+    const old = before.get(id);
+    if (!old) added.push(toServerTask(task));
+    else {
+      const changes = {};
+      for (const [key, serverKey] of [['title','task'],['priority','priority'],['dueDate','dueDate'],['completed','completed']]) {
+        if (task[key] !== old[key]) changes[serverKey] = key === 'dueDate' ? task[key] || null : task[key];
+      }
+      if (Object.keys(changes).length) updated.push({ id, changes });
+    }
+  }
+  for (const id of before.keys()) if (!after.has(id)) deleted.push(id);
+  taskSnapshot = structuredClone(AppState.tasks);
+  if (added.length || updated.length || deleted.length) pendingTaskChanges.push({ added, updated, deleted });
+  localStorage.setItem('lifepilot-pending-task-changes', JSON.stringify(pendingTaskChanges));
+  syncTasks();
+}
+
+async function syncTasks() {
+  if (syncingTasks || !pendingTaskChanges.length) return;
+  syncingTasks = true;
+  try {
+    while (pendingTaskChanges.length) {
+      const count = pendingTaskChanges.length;
+      const batch = pendingTaskChanges.slice(0, count);
+      const changes = { added: batch.flatMap(change => change.added), updated: batch.flatMap(change => change.updated), deleted: batch.flatMap(change => change.deleted) };
+      const response = await fetch('/api/tasks/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000), body: JSON.stringify(changes) });
+      if (!response.ok) throw new Error('Task sync unavailable');
+      const result = await response.json();
+      if (!Array.isArray(result.tasks)) throw new Error('Invalid task response');
+      pendingTaskChanges.splice(0, count);
+      localStorage.setItem('lifepilot-pending-task-changes', JSON.stringify(pendingTaskChanges));
+      if (!pendingTaskChanges.length) acceptServerTasks(result.tasks);
+    }
+    $('taskSyncStatus').textContent = 'Tasks synced with your LifePilot server and MCP.';
+  } catch {
+    $('taskSyncStatus').textContent = 'Saved in this browser. Server sync unavailable; changes will retry when you return.';
+  } finally { syncingTasks = false; }
+}
+function acceptServerTasks(tasks) {
+  AppState.tasks = tasks.map(fromServerTask);
+  taskSnapshot = structuredClone(AppState.tasks);
+  localStorage.setItem('lifepilot-planner-tasks', JSON.stringify(AppState.tasks));
+  renderPlannerTasks();
+}
+async function refreshServerTasks() {
+  if (pendingTaskChanges.length || syncingTasks) { await syncTasks(); return; }
+  try {
+    const response = await fetch('/api/tasks', { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Unavailable');
+    const result = await response.json();
+    if (!Array.isArray(result.tasks)) throw new Error('Invalid response');
+    if (!pendingTaskChanges.length && !syncingTasks) acceptServerTasks(result.tasks);
+    $('taskSyncStatus').textContent = 'Tasks synced with your LifePilot server and MCP.';
+  } catch { $('taskSyncStatus').textContent = 'Tasks saved in this browser. Connect to your server to sync.'; }
+}
+function initializeTaskSync() {
+  pendingTaskChanges = parseStoredJSON('lifepilot-pending-task-changes', []);
+  if (!localStorage.getItem('lifepilot-task-migration') && AppState.tasks.length) {
+    pendingTaskChanges.unshift({ added: AppState.tasks.map(toServerTask), updated: [], deleted: [] });
+    localStorage.setItem('lifepilot-pending-task-changes', JSON.stringify(pendingTaskChanges));
+  }
+  localStorage.setItem('lifepilot-task-migration', '1');
+  refreshServerTasks();
+  window.addEventListener('focus', refreshServerTasks);
 }
 
 function getTaskTimestamp(value) {
@@ -494,7 +318,7 @@ function sortTasks(tasks) {
     if (aDue !== null && bDue === null) return -1;
     if (aDue !== null && bDue !== null && aDue !== bDue) return aDue - bDue;
 
-    return (b.createdAt || 0) - (a.createdAt || 0);
+    return (a.createdAt || 0) - (b.createdAt || 0);
   });
 }
 
@@ -503,13 +327,14 @@ function renderPlannerTasks() {
   const taskCount = $('taskCount');
   if (!tasksList || !taskCount) return;
 
+  renderDashboard();
   const sortedTasks = sortTasks(AppState.tasks);
   taskCount.textContent = String(sortedTasks.length);
 
   if (!sortedTasks.length) {
     tasksList.innerHTML = `
       <div class="empty-state">
-        <p>No tasks yet. Add one to get started!</p>
+        <p>Choose tasks from your plan, or add a small next step below.</p>
       </div>
     `;
     return;
@@ -517,12 +342,12 @@ function renderPlannerTasks() {
 
   tasksList.innerHTML = sortedTasks
     .map((task) => `
-      <article class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${task.id}">
+      <article class="task-item ${task.completed ? 'completed' : ''}" data-task-id="${escapeHTML(task.id)}">
         <input
           type="checkbox"
           class="task-checkbox"
           data-task-action="toggle"
-          data-task-id="${task.id}"
+          data-task-id="${escapeHTML(task.id)}"
           aria-label="Mark task complete"
           ${task.completed ? 'checked' : ''}
         />
@@ -537,7 +362,7 @@ function renderPlannerTasks() {
           class="task-delete"
           type="button"
           data-task-action="delete"
-          data-task-id="${task.id}"
+          data-task-id="${escapeHTML(task.id)}"
           aria-label="Delete task"
           title="Delete task"
         >✕</button>
@@ -559,7 +384,7 @@ function addPlannerTask() {
   }
 
   AppState.tasks.push({
-    id: Date.now().toString(),
+    id: crypto.randomUUID(),
     title,
     priority: prioritySelect.value || 'medium',
     dueDate: dueDateInput.value || '',
@@ -599,6 +424,8 @@ function switchTab(tabName) {
 
   document.querySelectorAll('.nav-btn').forEach((button) => {
     button.classList.toggle('nav-btn-active', button.dataset.tab === tabName);
+    if (button.dataset.tab === tabName) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
   });
 }
 
@@ -630,8 +457,61 @@ function showAIError(message) {
   $('aiErrorContainer').style.display = 'block';
 }
 
+function renderAttachments() {
+  const list = $('attachmentList');
+  list.replaceChildren(...selectedAttachments.map((file, index) => {
+    const item = document.createElement('li');
+    if (file.mimeType.startsWith('image/')) {
+      const image = document.createElement('img');
+      image.src = file.dataUrl; image.alt = `Preview of ${file.name}`; item.append(image);
+    }
+    const name = document.createElement('span'); name.textContent = file.name; item.append(name);
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'attachment-remove';
+    remove.textContent = 'Remove'; remove.setAttribute('aria-label', `Remove ${file.name}`);
+    remove.disabled = isReadingAttachments || isSubmittingQuestion;
+    remove.addEventListener('click', () => { selectedAttachments.splice(index, 1); renderAttachments(); });
+    item.append(remove); return item;
+  }));
+  $('fileUpload').disabled = isReadingAttachments || isSubmittingQuestion;
+  $('askLifePilotBtn').disabled = isReadingAttachments || isSubmittingQuestion;
+}
+
+async function readAttachments(event) {
+  const files = [...event.target.files];
+  const types = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
+  isReadingAttachments = true; renderAttachments();
+  $('attachmentStatus').textContent = 'Preparing attachments…';
+  try {
+    if (selectedAttachments.length + files.length > 3) throw new Error('Choose up to three files. Remove one before adding another.');
+    let total = selectedAttachments.reduce((sum, file) => sum + file.size, 0);
+    const additions = [];
+    for (const file of files) {
+      const mimeType = file.type || types[file.name.split('.').pop().toLowerCase()];
+      if (!Object.values(types).includes(mimeType)) throw new Error('Choose JPG, PNG, WebP photos or PDFs. Export other documents as PDF first.');
+      if (!file.size || file.size > 5 * 1024 * 1024) throw new Error('Each file must be nonempty and 5 MB or smaller.');
+      if (file.name.length > 160) throw new Error('Shorten the filename to 160 characters or fewer.');
+      total += file.size;
+      if (total > 10 * 1024 * 1024) throw new Error('Keep the combined files under 10 MB.');
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error('Could not read that file. Please select it again.'));
+        reader.readAsDataURL(file);
+      });
+      additions.push({ name: file.name, mimeType, dataUrl: `data:${mimeType};base64,${dataUrl.split(',')[1]}`, size: file.size });
+    }
+    selectedAttachments.push(...additions);
+    $('attachmentStatus').textContent = 'Ready. Add a question, or ask LifePilot to explain the files.';
+  } catch (error) {
+    $('attachmentStatus').textContent = error instanceof Error ? error.message : 'Could not attach the files.';
+  } finally {
+    event.target.value = ''; isReadingAttachments = false; renderAttachments();
+  }
+}
+
 async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
-  const cleanQuestion = question.trim();
+  if (isReadingAttachments || isSubmittingQuestion) return;
+  const cleanQuestion = question.trim() || (selectedAttachments.length ? 'Help me understand these attachments and recommend practical next steps.' : '');
   if (!cleanQuestion) {
     $('aiQuestion').focus();
     return;
@@ -642,13 +522,15 @@ async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
   $('aiErrorContainer').style.display = 'none';
   $('aiResponseContainer').style.display = 'none';
   $('aiLoadingOverlay').style.display = 'grid';
-  $('askLifePilotBtn').disabled = true;
+  isSubmittingQuestion = true;
+  renderAttachments();
 
   try {
     const response = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: cleanQuestion })
+      signal: AbortSignal.timeout(35000),
+      body: JSON.stringify({ question: cleanQuestion, attachments: selectedAttachments.map(({name, mimeType, dataUrl}) => ({name, mimeType, dataUrl})) })
     });
     const result = await response.json().catch(() => null);
     if (!response.ok) {
@@ -676,26 +558,17 @@ async function submitAIQuestion(question = $('aiQuestion').value.trim()) {
     showAIError(error instanceof Error ? error.message : 'LifePilot could not answer your question. Please try again.');
   } finally {
     $('aiLoadingOverlay').style.display = 'none';
-    $('askLifePilotBtn').disabled = false;
+    isSubmittingQuestion = false;
+    renderAttachments();
   }
 }
 
 function addAIRecommendationsToPlanner() {
   if (!lastAIResponse || !lastAIResponse.recommendedActions.length) return;
 
-  const createdAt = Date.now();
-  AppState.tasks.push(...lastAIResponse.recommendedActions.map((title, index) => ({
-    id: `${createdAt}-${index}`,
-    title,
-    priority: 'medium',
-    dueDate: '',
-    completed: false,
-    createdAt
-  })));
+  const added = addTitlesToPlanner(lastAIResponse.recommendedActions);
+  $('addActionsBtn').textContent = added ? `${added} added to your planner` : 'Already in your planner';
 
-  saveTasks();
-  renderPlannerTasks();
-  $('addActionsBtn').textContent = '✓ Added to My Planner';
 }
 
 function attachPlannerEventHandlers() {
@@ -757,6 +630,9 @@ function attachTabNavigationHandlers() {
 function attachEventHandlers() {
   attachPlannerEventHandlers();
   attachTabNavigationHandlers();
+  $('fileUpload').addEventListener('change', readAttachments);
+  $('addPlanTasksBtn').addEventListener('click', addSelectedPlanTasks);
+  $('revisePlanBtn').addEventListener('click', () => generatePlanFromRequest(true));
 
   const askButton = $('askLifePilotBtn');
   if (askButton) {
@@ -842,15 +718,55 @@ function attachEventHandlers() {
       const index = Number(button.dataset.planIndex);
       if (AppState.plans[index]) {
         AppState.currentPlan = AppState.plans[index];
+        localStorage.setItem('lifepilot-current-plan', JSON.stringify(AppState.currentPlan));
         renderPlan(AppState.currentPlan);
 
         const saveBtnAfterView = $('savePlanBtn');
         if (saveBtnAfterView) {
-          saveBtnAfterView.textContent = '✓ Plan Saved';
+          saveBtnAfterView.textContent = 'Plan saved';
         }
       }
     });
   }
+}
+
+function normalizeTask(title) {
+  return String(title).trim().toLocaleLowerCase();
+}
+
+function addTitlesToPlanner(titles, planId) {
+  const existing = new Set(AppState.tasks.map(task => normalizeTask(task.title)));
+  const additions = [];
+  for (const title of titles) {
+    const key = normalizeTask(title);
+    if (!key || existing.has(key)) continue;
+    existing.add(key);
+    additions.push({ id: crypto.randomUUID(), title: title.trim(), priority: 'medium', dueDate: '', completed: false, createdAt: Date.now(), ...(planId ? { planId } : {}) });
+  }
+  AppState.tasks.push(...additions);
+  saveTasks();
+  renderPlannerTasks();
+  return additions.length;
+}
+
+function addSelectedPlanTasks() {
+  if (!AppState.currentPlan) return;
+  const selected = [...document.querySelectorAll('[data-plan-task]:checked')]
+    .map(box => AppState.currentPlan.tasks[Number(box.dataset.planTask)]).filter(Boolean);
+  const added = addTitlesToPlanner(selected, AppState.currentPlan.id);
+  renderPlan(AppState.currentPlan);
+  $('planNotice').textContent = added ? `${added} task${added === 1 ? '' : 's'} added. Your next step is ready.` : 'Select a new task to add. Existing tasks are kept.';
+}
+
+function renderDashboard() {
+  const tasks = AppState.tasks;
+  const done = tasks.filter(task => task.completed).length;
+  const next = sortTasks(tasks).find(task => !task.completed);
+  $('progressCount').textContent = `${done} of ${tasks.length} completed`;
+  $('taskProgress').max = Math.max(1, tasks.length);
+  $('taskProgress').value = done;
+  $('nextAction').textContent = next?.title || (tasks.length ? 'You’ve completed your tasks. Take a moment to enjoy it.' : AppState.currentPlan?.nextSteps?.[0] || 'Start with what’s on your mind.');
+  $('progressLabel').textContent = next ? 'One manageable action. Check it off when you’re done.' : tasks.length ? 'Ready for more? Choose another task or update your plan.' : AppState.currentPlan ? 'Choose tasks from your plan to start tracking progress.' : 'Your plan and progress will appear here.';
 }
 
 // Initialize the web app
@@ -859,9 +775,45 @@ if (document.readyState === 'loading') {
     attachEventHandlers();
     renderPlannerTasks();
     renderSavedPlans();
+    initializeTaskSync();
+    if (AppState.currentPlan) renderPlan(AppState.currentPlan);
   });
 } else {
   attachEventHandlers();
   renderPlannerTasks();
   renderSavedPlans();
+  initializeTaskSync();
+  if (AppState.currentPlan) renderPlan(AppState.currentPlan);
 }
+
+
+document.querySelectorAll("[data-feature]").forEach(button => button.addEventListener("click", () => {
+ const feature = button.dataset.feature;
+ switchTab(feature === "planner" ? "planner" : "assistant");
+ if (feature === "documents" || feature === "photos") {
+  const picker = document.getElementById("fileUpload");
+  picker.accept = feature === "documents" ? "application/pdf" : "image/jpeg,image/png,image/webp";
+  picker.click();
+ } else if (feature === "assistant") document.getElementById("aiQuestion").focus();
+}));
+
+async function checkConnection() {
+ const button = $('retryConnectionBtn');
+ button.disabled = true;
+ try {
+  const response = await fetch('/api/status', { cache: 'no-store', signal: AbortSignal.timeout(8000) });
+  if (!response.ok) throw new Error('Unavailable');
+  const status = await response.json();
+  if (status.service !== 'lifepilot') throw new Error('Wrong page');
+  $('connectionTitle').textContent = status.aiConfigured ? 'Connected to LifePilot' : 'Server connected � AI setup needed';
+  $('connectionMessage').textContent = status.aiConfigured ? 'AI is configured. Your tasks sync with this server.' : 'Set OPENAI_API_KEY in your server environment and restart LifePilot. Your saved work is kept.';
+  document.querySelector('.connection-banner').dataset.state = status.aiConfigured ? 'ready' : 'offline';
+ } catch {
+  $('connectionTitle').textContent = 'Open your running LifePilot server';
+  $('connectionMessage').textContent = 'In Codespaces, start LifePilot, then open port 3001 from the Ports tab. This page cannot reach the AI backend. Your saved work is kept.';
+  document.querySelector('.connection-banner').dataset.state = 'offline';
+ } finally { button.disabled = false; }
+}
+$('retryConnectionBtn').addEventListener('click', checkConnection);
+checkConnection();
+
